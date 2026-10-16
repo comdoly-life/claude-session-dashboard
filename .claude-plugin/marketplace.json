@@ -1,0 +1,14 @@
+{
+  "name": "claude-session-dashboard",
+  "description": "Claude Code session dashboard mod: live pane of subagents, agent teams and workflows with progress, tokens and limit gauges",
+  "owner": {
+    "name": "comdoly-life"
+  },
+  "plugins": [
+    {
+      "name": "session-dashboard",
+      "source": "./",
+      "description": "Live dashboard pane of the main session, subagents, agent teams and workflows with progress, tokens and run time; 5-hour / weekly limit gauges"
+    }
+  ]
+}
