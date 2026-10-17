@@ -1,4 +1,4 @@
-import type { ModelUsage } from 'claude-code'
+import type { Color, ModelUsage } from 'claude-code'
 
 import type { Activity, LimitWindow, Tokens } from '../types'
 
@@ -13,8 +13,8 @@ const WINDOW_LABEL: Record<string, string> = {
 }
 const MAX_SAMPLES = 600
 const SAME_RESET_MS = 5 * 60_000
-const MIN_BAR = 6
-const MAX_BAR = 24
+/** Remaining limit at or above this is drawn green; below it, ever redder. */
+const SAFE_REMAINING = 60
 const DETAIL_KEYS = ['command', 'file_path', 'notebook_path', 'pattern', 'url', 'query', 'skill', 'description', 'prompt']
 
 export const ZERO_TOKENS: Tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, requests: 0 }
@@ -213,12 +213,6 @@ export function isCurrent(window: LimitWindow, now: number): boolean {
   return Number.isNaN(end) || end > now
 }
 
-export type Tone = 'success' | 'warning' | 'error'
-
-export function tone(percent: number): Tone {
-  return percent >= 80 ? 'error' : percent >= 50 ? 'warning' : 'success'
-}
-
 export function gauge(percent: number, width: number): { filled: string; empty: string } {
   const cells = Math.max(1, width)
   const filled = Math.min(cells, Math.round((Math.max(0, percent) / 100) * cells))
@@ -241,57 +235,30 @@ export function cells(text: string): number {
   return count
 }
 
-export type Segment = {
-  label: string
-  percent: string
-  tone: Tone
-  bar?: { filled: string; empty: string }
-  reset?: string
-  warn?: string
+/** What is left of a window, in whole percent. */
+export function remaining(window: LimitWindow): number {
+  return Math.max(0, Math.min(100, Math.round(100 - window.percentUsed)))
 }
 
 /**
- * One window as the band draws it in `room` cells: its label, a gauge when
- * there is room for one, the percentage used, the time to its reset, and a
- * warning when the pace so far runs out of limit before the reset.
+ * How the band paints what is left: green with room to spare, then from
+ * amber through orange to a deep red as the remainder runs out.
  */
-export function limitSegment(window: LimitWindow, now: number, room: number): Segment {
-  const end = window.resetsAt === undefined ? NaN : Date.parse(window.resetsAt)
-  const hits = pace(window, now)?.hitsInMs
-  const segment: Segment = {
-    label: windowLabel(window.kind),
-    percent: `${Math.round(window.percentUsed)}%`,
-    tone:
-      window.percentUsed >= 80 || (hits !== undefined && hits <= 0)
-        ? 'error'
-        : hits !== undefined
-          ? 'warning'
-          : tone(window.percentUsed),
+export function remainingColor(left: number): Color {
+  const r = Math.max(0, Math.min(100, left))
+  if (r >= SAFE_REMAINING) return 'success'
+  const t = r / SAFE_REMAINING
+  return hsl(40 * t, 85, 45 + 12 * t)
+}
+
+function hsl(hue: number, saturation: number, lightness: number): string {
+  const s = saturation / 100
+  const l = lightness / 100
+  const k = (n: number) => (n + hue / 30) % 12
+  const a = s * Math.min(l, 1 - l)
+  const channel = (n: number) => {
+    const value = l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))
+    return Math.round(value * 255).toString(16).padStart(2, '0')
   }
-  if (!Number.isNaN(end)) segment.reset = `⟳${duration(end - now)}`
-  if (hits !== undefined) segment.warn = hits <= 0 ? '⚠ 한도 도달' : `⚠ ${duration(hits)} 후 소진`
-
-  const words = [segment.label, segment.percent, segment.reset, segment.warn].filter(Boolean)
-  const fixed = words.reduce((sum, word) => sum + cells(word ?? ''), 0) + words.length
-  const bar = Math.min(MAX_BAR, room - fixed)
-  if (bar >= MIN_BAR) segment.bar = gauge(window.percentUsed, bar)
-  return segment
-}
-
-/**
- * How the window is going: how much of it has passed, and either where usage
- * lands at the reset at the pace so far or, when that is past 100%, how long
- * until the limit is hit.
- */
-export function pace(window: LimitWindow, now: number): { elapsed: number; projected?: number; hitsInMs?: number } | undefined {
-  const span = windowSpan(window, now)
-  if (span === undefined) return undefined
-  const length = span.end - span.start
-  const passed = Math.min(length, Math.max(0, now - span.start))
-  const elapsed = Math.round((passed / length) * 100)
-  if (passed < length * 0.05 || window.percentUsed <= 0) return { elapsed }
-  const projected = Math.round((window.percentUsed / passed) * length)
-  if (projected <= 100) return { elapsed, projected }
-  const perMs = window.percentUsed / passed
-  return { elapsed, projected, hitsInMs: (100 - window.percentUsed) / perMs }
+  return `#${channel(0)}${channel(8)}${channel(4)}`
 }

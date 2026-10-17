@@ -7,12 +7,13 @@ import {
   cells,
   compact,
   describeCall,
-  limitSegment,
-  pace,
   recordLimit,
+  remaining,
+  remainingColor,
   ZERO_TOKENS,
 } from '../hooks/format'
 import type { Activity, Workflow } from '../types'
+import { NO_CONTROLS, afterCommand, effortIn, familyOf, modelText, savedEffort, ultracodeIn, versionOf } from '../hooks/controls'
 import { buildBoard, typeLabel } from '../hooks/board'
 import { activityOf, brief, fit } from '../hooks/format'
 import { planOf } from '../hooks/plan'
@@ -245,28 +246,65 @@ describe('format', () => {
     expect(cells('⟳2h00m')).toBe(6)
   })
 
-  test('fits a window into the band with a gauge, its reset and no warning on pace', async () => {
-    const steady = { kind: 'five_hour', percentUsed: 30, resetsAt: RESET, samples: [] }
-    const segment = limitSegment(steady, NOW, 40)
-    expect(segment).toMatchObject({ label: '5시간', percent: '30%', reset: '⟳2h00m', tone: 'success' })
-    expect(segment.warn).toBeUndefined()
-    expect((segment.bar?.filled.length ?? 0) + (segment.bar?.empty.length ?? 0)).toBe(23)
-    expect(limitSegment(steady, NOW, 15).bar).toBeUndefined()
+  test('shows what is left of a window, ever redder as it runs out', async () => {
+    const window = (percentUsed: number) => ({ kind: 'five_hour', percentUsed, resetsAt: RESET, samples: [] })
+    expect(remaining(window(48))).toBe(52)
+    expect(remaining(window(100.4))).toBe(0)
+    expect(remainingColor(80)).toBe('success')
+    expect(remainingColor(60)).toBe('success')
+    const reds = [50, 30, 10, 0].map(left => remainingColor(left))
+    expect(reds.every(color => /^#[0-9a-f]{6}$/.test(color))).toBe(true)
+    // Red climbs to the top channel and green falls away as the remainder runs out.
+    const green = (color: string) => parseInt(color.slice(3, 5), 16)
+    const red = (color: string) => parseInt(color.slice(1, 3), 16)
+    expect(reds.map(green)).toEqual([...reds.map(green)].sort((x, y) => y - x))
+    expect(reds.every(color => red(color) > green(color))).toBe(true)
+    expect(reds[3]).toBe('#d41111')
+  })
+})
+
+describe('controls', () => {
+  test('names a model by its family and version', async () => {
+    expect(familyOf('claude-opus-5-5')).toBe('opus')
+    expect(familyOf('fable[1m]')).toBe('fable')
+    expect(familyOf('claude-mythos-5')).toBeUndefined()
+    expect(versionOf('claude-fable-5-1')).toBe('5.1')
+    expect(versionOf('claude-sonnet-5')).toBe('5')
+    expect(modelText('claude-haiku-5-5')).toBe('하이쿠 5.5')
+    expect(modelText('claude-mythos-5')).toBe('claude-mythos-5')
   })
 
-  test('warns when the pace runs out of limit before the reset', async () => {
-    const window = { kind: 'five_hour', percentUsed: 70, resetsAt: RESET, samples: [] }
-    expect(limitSegment(window, NOW, 60)).toMatchObject({ tone: 'warning', warn: '⚠ 1h17m 후 소진' })
-    expect(limitSegment({ ...window, percentUsed: 90 }, NOW, 60).tone).toBe('error')
+  test('reads what /effort left in force from its answer', async () => {
+    expect(effortIn('Set effort level to xhigh (this session only): Extended reasoning')).toBe('xhigh')
+    expect(effortIn("Effort 'max' exceeds the cap for Sonnet 5.5 set by your settings or organization; set to 'high' instead")).toBe('high')
+    expect(effortIn('Effort level set to auto')).toBe('auto')
+    expect(effortIn('Invalid argument: huge. Valid options are: low|medium|high')).toBeUndefined()
+    expect(ultracodeIn('Ultracode on (this session only): dynamic workflows on every task. Effort stays high')).toBe(true)
+    expect(ultracodeIn('Set effort level to low (this session only): Quick · Ultracode off')).toBe(false)
+    expect(ultracodeIn('Ultracode needs dynamic workflows enabled (see /config).')).toBeUndefined()
+
+    const on = afterCommand(NO_CONTROLS, 'effort', 'ultracode on', 'Ultracode on (this session only): dynamic workflows on every task')
+    expect(on).toEqual({ ultracode: true })
+    expect(afterCommand(on, 'effort', 'low', 'Set effort level to low (this session only): Quick · Ultracode off')).toEqual({ ultracode: false, effort: 'low' })
+    expect(afterCommand(on, 'effort', 'max', undefined)).toEqual({ ultracode: true, effort: 'max' })
+    expect(afterCommand(on, 'model', 'haiku', 'Set model to Haiku 5.5')).toBe(on)
   })
 
-  test('projects the pace to the reset, or the time to the limit', async () => {
-    const steady = { kind: 'five_hour', percentUsed: 30, resetsAt: RESET, samples: [] }
-    expect(pace(steady, NOW)).toEqual({ elapsed: 60, projected: 50 })
-    const hot = { ...steady, percentUsed: 90 }
-    const going = pace(hot, NOW)
-    expect(going?.projected).toBe(150)
-    expect(Math.round((going?.hitsInMs ?? 0) / 60_000)).toBe(20)
+  test("reads the effort settings keep for a model, its own entry over the top level's", async () => {
+    const settings = {
+      effortLevel: 'xhigh',
+      modelSettings: {
+        'claude-fable-5-1': { effortLevel: 'high' },
+        sonnet: { effortLevel: 'medium' },
+        'claude-opus-5-5': { autoCompactWindow: 'auto' },
+      },
+    }
+    expect(savedEffort(settings, 'claude-fable-5-1')).toBe('high')
+    expect(savedEffort(settings, 'claude-fable-5-1[1m]')).toBe('high')
+    expect(savedEffort(settings, 'claude-sonnet-5-5')).toBe('medium')
+    expect(savedEffort(settings, 'claude-opus-5-5')).toBe('xhigh')
+    expect(savedEffort({}, 'claude-opus-5-5')).toBeUndefined()
+    expect(savedEffort({ modelSettings: 'broken', effortLevel: 'huge' }, 'claude-opus-5-5')).toBeUndefined()
   })
 })
 
@@ -444,11 +482,12 @@ test('the board shows every loop with its work, tokens and time; a press opens a
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({ plugin: 'session-dashboard', surface, ...BAND })
+    expect(await band.find({ text: '잔여 ' })).toBeDefined()
     expect(await band.find({ text: '5시간' })).toBeDefined()
-    expect(await band.find({ text: '48%' })).toBeDefined()
-    expect(await band.find({ text: ' ⟳2h00m' })).toBeDefined()
+    expect(await band.find({ text: '52%' })).toBeDefined()
     expect(await band.find({ text: '주간' })).toBeDefined()
-    expect(await band.find({ text: '21%' })).toBeDefined()
+    expect(await band.find({ text: '79%' })).toBeDefined()
+    expect(await band.find({ text: /⟳|█|░/ })).toBeUndefined()
     const tree = await band.drawn()
     expect('props' in tree ? tree.props : undefined).toMatchObject({ marginTop: 1 })
     await band.unmount()
@@ -630,4 +669,104 @@ return agent('sum', { label: 'summary', phase: 'Summarize' })`
   expect(await ui.find({ text: /Read 1\/2 › Summarize/ })).toBeDefined()
   expect(await ui.find({ text: /실행 ID wf_disk/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('the band picks the model, effort, workflows and ultracode from its buttons', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  mock.store(on)
+  world(on)
+  let model = 'claude-opus-5-5'
+  const commands: string[] = []
+  const rows: string[] = []
+  const toasts: string[] = []
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true as const } }))
+  on('session.usage', () => ({ value: { startedAt: NOW, context: { window: 200_000 }, rateLimits: [] } }))
+  on('session.model', () => ({ value: model }))
+  on('settings.read', () => ({ value: { effortLevel: 'xhigh', modelSettings: { 'claude-fable-5-1': { effortLevel: 'high' } } } }))
+  on('classic.SessionStart', () => ({}))
+  on('config.list', () => ({
+    value: [
+      { key: 'workflows', label: 'Dynamic workflows', kind: 'boolean' as const, value: true, provider: { plugin: 'engine', tier: 'core' as const }, isLocked: false },
+    ],
+  }))
+  // The /config model row asks consent for Fable first, so that pick goes through /model.
+  on('config.set', (_$, e) => {
+    rows.push(`${e.key}=${String(e.value)}`)
+    if (e.key === 'model' && e.value === 'fable') return { deny: 'needs usage-credits consent — run /model first' }
+    if (e.key === 'model') model = `claude-${String(e.value)}-5-5`
+    return { value: e.value }
+  })
+  on('command.run', (_$, e) => {
+    commands.push(`/${e.command} ${e.args}`)
+    if (e.command === 'model') {
+      model = 'claude-fable-5-1'
+      return { text: 'Set model to Fable 5.1 and saved as your default for new sessions' }
+    }
+    if (e.args === 'ultracode on') return { text: 'Ultracode on (this session only): dynamic workflows on every task. Effort stays xhigh' }
+    return { text: `Set effort level to ${e.args} (this session only): Quick, straightforward implementation` }
+  })
+  on('ui.toast', (_$, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+
+  await $.session.start({ cwd: '/work/proj', surface: 'terminal', isInteractive: true })
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const band = await $.ui.mount({ plugin: 'session-dashboard', surface, ...BAND })
+    // No limit reading yet: the controls stand alone.
+    expect(await band.find({ text: '잔여 ' })).toBeUndefined()
+    expect(await band.find({ key: 'workflows' })).toBeDefined()
+    expect(await band.find({ text: '오푸스 5.5' })).toBeDefined()
+    expect(await band.find({ text: '페이블' })).toBeDefined()
+    expect(await band.find({ key: 'effort:xhigh' })).toBeDefined()
+    expect(await band.find({ key: 'ultracode' })).toBeDefined()
+    await band.unmount()
+  }
+
+  const band = await $.ui.mount({ plugin: 'session-dashboard', surface: 'terminal', ...BAND })
+  // The picked button is the one drawn undimmed.
+  const picked = async (group: string) =>
+    (await band.findAll({ type: 'Button' })).filter(one => one.key?.startsWith(`${group}:`) && one.props['dimColor'] !== true).map(one => one.key)
+  expect(await picked('model')).toEqual(['model:opus'])
+  expect(await picked('effort')).toEqual(['effort:xhigh'])
+  await band.press({ key: 'model:sonnet' })
+  expect(await band.find({ text: '소넷 5.5' })).toBeDefined()
+  await band.press({ key: 'model:fable' })
+  expect(await band.find({ text: '페이블 5.1' })).toBeDefined()
+  // Fable starts on the effort its own settings entry keeps.
+  expect(await picked('effort')).toEqual(['effort:high'])
+  await band.press({ key: 'effort:low' })
+  expect(await picked('effort')).toEqual(['effort:low'])
+  const shown = async (key: string) => (await band.find({ key }))?.text
+  expect(await shown('workflows')).toBe('워크플로 ON')
+  expect(await shown('ultracode')).toBe('울트라코드 OFF')
+  await band.press({ key: 'ultracode' })
+  expect(await shown('ultracode')).toBe('울트라코드 ON')
+  await band.press({ key: 'workflows' })
+  // With workflows off, ultracode has nothing to run on: it reads off and asks for workflows.
+  expect(await shown('workflows')).toBe('워크플로 OFF')
+  expect(await shown('ultracode')).toBe('울트라코드 OFF')
+  await band.press({ key: 'ultracode' })
+
+  // A /clear fires no session.start: the band reads the model (changed meanwhile) and its effort again.
+  model = 'claude-haiku-5-5'
+  await $.classic.SessionStart({ source: 'clear' })
+  expect(await picked('model')).toEqual(['model:haiku'])
+  expect(await band.find({ text: '하이쿠 5.5' })).toBeDefined()
+  expect(await picked('effort')).toEqual(['effort:xhigh'])
+  await band.unmount()
+
+  expect(rows).toEqual(['model=sonnet', 'model=fable', 'workflows=false'])
+  expect(commands).toEqual(['/model fable', '/effort low', '/effort ultracode on'])
+  expect(toasts).toEqual([
+    '모델: 소넷 5.5',
+    '모델: 페이블 5.1',
+    'effort: low',
+    '울트라코드 켬 (이 세션만)',
+    '워크플로 끔',
+    '울트라코드는 워크플로를 켠 뒤에 쓸 수 있습니다.',
+  ])
 })

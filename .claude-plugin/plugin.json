@@ -1,8 +1,10 @@
 {
   "name": "session-dashboard",
-  "version": "0.2.0",
-  "description": "Live dashboard pane (Korean UI): the main session, subagents, agent teams and workflows, each with what it is doing, progress (done/total), tokens and run time, plus detail tabs; 5-hour / weekly limit gauges above the prompt",
-  "author": { "name": "comdoly-life" },
+  "version": "0.3.0",
+  "description": "Live dashboard pane (Korean UI): the main session, subagents, agent teams and workflows, each with what it is doing, progress (done/total), tokens and run time, plus detail tabs; above the prompt, the 5-hour / weekly limit left and buttons for the model, effort, workflows and ultracode",
+  "author": {
+    "name": "comdoly-life"
+  },
   "repository": "https://github.com/comdoly-life/claude-session-dashboard",
   "types": "./types/index.d.ts"
 }

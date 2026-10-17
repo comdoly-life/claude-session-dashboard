@@ -120,6 +120,25 @@ export type Tabs = { open: Tab[]; active: string }
 /** A hook or a drawing that failed: shown on the board, never swallowed. */
 export type Fault = { at: number; where: string; message: string }
 
+/** A model family the band picks by its alias, which names the family's latest model. */
+export type ModelFamily = 'fable' | 'opus' | 'sonnet' | 'haiku'
+
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+/** The session's model, effort, workflows and ultracode, as the band's buttons show them. */
+export type Controls = {
+  /** The main loop's model as `$.session.model()` answers it (`claude-opus-5-5`). */
+  model?: string
+  /** `auto` once `/effort auto` handed the effort back to the model's default. */
+  effort?: EffortLevel | 'auto'
+  /** The `/config` row `workflows` (Dynamic workflows); unknown until read. */
+  workflows?: boolean
+  /** Ultracode for this session, as `/effort ultracode on|off` last left it. */
+  ultracode: boolean
+  /** The button whose change is still on its way, drawn with an ellipsis. */
+  pending?: string
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'session-dashboard': {
@@ -131,6 +150,7 @@ declare module 'claude-code' {
       tasks: Record<string, TaskItem>
       tabs: Tabs
       faults: Fault[]
+      controls: Controls
     }
   }
 }

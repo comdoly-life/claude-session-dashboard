@@ -1,8 +1,9 @@
 import { atom, read, update } from 'claude-code'
-import type { AgentInfo, EngineInterface, Register, SessionUsage } from 'claude-code'
+import type { AgentInfo, ConfigRow, EngineInterface, Register, SessionUsage, Settings } from 'claude-code'
 
-import type { Activity, LimitWindow, Meter, Tabs, TaskItem, Todo, WorkflowCall } from '../types'
+import type { Activity, Controls, EffortLevel, LimitWindow, Meter, ModelFamily, Tabs, TaskItem, Todo, WorkflowCall } from '../types'
 import { ALL, buildBoard, closeTab, openTab, showTab } from './board'
+import { EFFORTS, MODELS, NO_CONTROLS, afterCommand, effortOf, familyOf, isEffortLevel, isRefusal, modelText, savedEffort } from './controls'
 import {
   MAIN,
   activityOf,
@@ -12,10 +13,12 @@ import {
   fit,
   freshActivity,
   isCurrent,
-  limitSegment,
   recordLimit,
+  remaining,
+  remainingColor,
   sumTokens,
   tokenText,
+  windowLabel,
 } from './format'
 import { drawPane } from './view'
 import {
@@ -46,7 +49,9 @@ const MAX_FAULTS = 5
 const MAX_RUNS = 12
 /** A run whose journal and agents have been still this long has stopped unseen. */
 const STALE_MS = 15 * 60_000
-const BAND_GAP = '    '
+const BAND_GAP = 2
+const MODEL_ROW = 'model'
+const WORKFLOWS_ROW = 'workflows'
 // The Agent tool's own call spans a foreground subagent's run, and the
 // Workflow tool's launches a run's agents: a tool.call hook on either would
 // sit above those runs, and a hook is never run beneath its own frame.
@@ -60,6 +65,7 @@ const workflows = atom({ plugin: 'session-dashboard', key: 'workflows' } as cons
 const tasks = atom({ plugin: 'session-dashboard', key: 'tasks' } as const, {})
 const tabs = atom({ plugin: 'session-dashboard', key: 'tabs' } as const, { open: [], active: ALL })
 const faults = atom({ plugin: 'session-dashboard', key: 'faults' } as const, [])
+const controls = atom({ plugin: 'session-dashboard', key: 'controls' } as const, NO_CONTROLS)
 
 type Engine = EngineInterface
 
@@ -264,6 +270,101 @@ async function noteTasks($: Engine, tool: string, input: Record<string, unknown>
   }
 }
 
+/**
+ * The effort a session on this model starts with: `CLAUDE_CODE_EFFORT_LEVEL` over what
+ * settings keep for the model. A request's own effort (`turn.step`) tells better once one is sent.
+ */
+async function startingEffort($: Engine, model: string) {
+  const forced = await $.env.get('CLAUDE_CODE_EFFORT_LEVEL').catch(() => undefined)
+  const settings = await $.settings.read().catch((): Settings => ({}))
+  return effortOf(forced) ?? savedEffort(settings, model)
+}
+
+/**
+ * Reads what the band's buttons show: the main loop's model, the workflows row and the
+ * model's effort; an effort already known for the same model (a reload, a /clear) is kept.
+ */
+async function readControls($: Engine) {
+  const model = await $.session.model()
+  const rows = await $.config.list().catch((): ConfigRow[] => [])
+  const workflows = rows.find(row => row.key === WORKFLOWS_ROW)?.value
+  const effort = await startingEffort($, model)
+  await update($, controls, now => {
+    const next: Controls = { ...now, model }
+    if (typeof workflows === 'boolean') next.workflows = workflows
+    if (effort !== undefined && (now.effort === undefined || now.model !== model)) next.effort = effort
+    return next
+  })
+}
+
+/** Follows the main loop's model; another model starts on the effort settings keep for it. */
+async function noteModel($: Engine): Promise<string> {
+  const model = await $.session.model()
+  if ((await read($, controls)).model === model) return model
+  const effort = await startingEffort($, model)
+  await update($, controls, now => (effort === undefined ? { ...now, model } : { ...now, model, effort }))
+  return model
+}
+
+/** Runs a button's change in the background: the button drawn pending meanwhile, the outcome a toast. */
+function act($: Engine, key: string, work: () => Promise<string>) {
+  const run = async () => {
+    await update($, controls, now => ({ ...now, pending: key }))
+    try {
+      $.ui.toast(await work())
+    } catch (error) {
+      await fault($, `control ${key}`, error)
+      $.ui.toast(`바꾸지 못했습니다: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      await update($, controls, now => {
+        if (now.pending !== key) return now
+        const { pending: _, ...rest } = now
+        return rest
+      })
+    }
+  }
+  void run().catch(error => fault($, 'control', error))
+}
+
+/** The family's alias names its latest model; a pick the `/config` row refuses (one asking consent first) goes through `/model`. */
+async function chooseModel($: Engine, family: ModelFamily): Promise<string> {
+  const set = await $.config.set({ key: MODEL_ROW, value: family }).catch((error: unknown) => ({ deny: String(error) }))
+  let refused: string | undefined
+  if (set.deny !== undefined) {
+    const ran = await $.command.run({ command: 'model', args: family })
+    if (isRefusal(ran.text)) refused = ran.text
+  }
+  const model = await noteModel($)
+  return refused ?? `모델: ${modelText(model)}`
+}
+
+async function chooseEffort($: Engine, level: EffortLevel): Promise<string> {
+  const ran = await $.command.run({ command: 'effort', args: level })
+  await update($, controls, now => afterCommand(now, 'effort', level, ran.text))
+  const effort = (await read($, controls)).effort
+  return effort === level ? `effort: ${level}` : (ran.text ?? `effort: ${effort ?? '?'}`)
+}
+
+async function toggleUltracode($: Engine): Promise<string> {
+  const now = await read($, controls)
+  if (now.workflows === false) return '울트라코드는 워크플로를 켠 뒤에 쓸 수 있습니다.'
+  const args = `ultracode ${now.ultracode ? 'off' : 'on'}`
+  const ran = await $.command.run({ command: 'effort', args })
+  await update($, controls, current => afterCommand(current, 'effort', args, ran.text))
+  const isOn = (await read($, controls)).ultracode
+  if (isOn === now.ultracode) return ran.text ?? '울트라코드를 바꾸지 못했습니다.'
+  return isOn ? '울트라코드 켬 (이 세션만)' : '울트라코드 끔'
+}
+
+async function toggleWorkflows($: Engine): Promise<string> {
+  const isOn = (await read($, controls)).workflows !== true
+  const set = await $.config.set({ key: WORKFLOWS_ROW, value: isOn })
+  if (set.deny !== undefined) return `워크플로를 바꾸지 못했습니다: ${set.deny}`
+  const workflows = set.value === true
+  await update($, controls, now => ({ ...now, workflows }))
+  return workflows ? '워크플로 켬' : '워크플로 끔'
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -271,6 +372,7 @@ export const register: Register = on => {
       description: '세션 대시보드(서브에이전트·팀·워크플로·토큰)를 열거나 닫습니다',
     })
     await safe($, 'meter', async () => recordMeter($, await $.session.usage()))
+    await safe($, 'controls', () => readControls($))
     $.clock.every(TICK_MS, () => {
       void update($, tick, n => n + 1)
       void syncRuns($)
@@ -292,6 +394,40 @@ export const register: Register = on => {
     return { text: '대시보드를 열었습니다.' }
   })
 
+  // The person's own /model and /effort, typed or picked: the band follows what they left in force.
+  on('command.run', { command: /^(?:model|effort)$/ }, async ($, e, next) => {
+    const result = await next(e)
+    await safe($, 'controls', async () => {
+      await update($, controls, now => afterCommand(now, e.command, e.args, result.text))
+      if (e.command === 'model') await noteModel($)
+    })
+
+    return result
+  })
+
+  // The same rows changed in /config; this plugin's own $.config.set never passes here.
+  on('config.set', { key: /^(?:model|workflows)$/ }, async ($, e, next) => {
+    const result = await next(e)
+    if (result.deny === undefined) {
+      const workflows = result.value === true
+      await safe($, 'controls', () =>
+        e.key === WORKFLOWS_ROW ? update($, controls, now => ({ ...now, workflows })) : noteModel($),
+      )
+    }
+
+    return result
+  })
+
+  // A /clear goes on under a new session id and fires no session.start: the band reads its model, effort and limits again.
+  on('classic.SessionStart', async ($, e, next) => {
+    if (e.source === 'clear') {
+      await safe($, 'meter', async () => recordMeter($, await $.session.usage()))
+      await safe($, 'controls', () => readControls($))
+    }
+
+    return next(e)
+  })
+
   on('session.measure', async ($, e, next) => {
     await safe($, 'meter', () => recordMeter($, e))
 
@@ -310,6 +446,12 @@ export const register: Register = on => {
   })
 
   on('turn.step', async function* ($, e, next) {
+    const effort = e.effort
+    if (e.agentId === undefined && isEffortLevel(effort)) {
+      await safe($, 'controls', async () => {
+        if ((await read($, controls)).effort !== effort) await update($, controls, now => ({ ...now, effort }))
+      })
+    }
     const result = yield* next(e)
     const usage = result.usage
     if (usage !== null) {
@@ -331,7 +473,7 @@ export const register: Register = on => {
         endedAt: now,
         tokens: one.tokens.requests === 0 && usage !== undefined ? addUsage(one.tokens, usage) : one.tokens,
       }))
-      if (agentId === undefined) return
+      if (agentId === undefined) return noteModel($)
       const isTask = (await read($, workflows)).some(flow => flow.tasks.some(t => t.agentId === agentId))
       if (!isTask) return
       const now = await $.clock.now()
@@ -566,30 +708,78 @@ export const register: Register = on => {
     await read($, tick)
     const now = await $.clock.now()
     const windows = (await read($, meter)).limits.filter(one => isCurrent(one, now))
-    if (windows.length === 0) return next(e)
+    const state = await read($, controls)
 
-    const { Box, Text } = $.ui.resolve(e)
-    const room = Math.floor((e.props.bodyColumns - BAND_GAP.length * (windows.length - 1)) / windows.length)
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const press = (key: string, work: () => Promise<string>) => () => act($, key, work)
+    const mark = (key: string) => (state.pending === key ? '…' : '')
+    const family = familyOf(state.model)
+    const hasWorkflows = state.workflows !== false
+    const isUltracode = state.ultracode && hasWorkflows
+    const toggle = (isOn: boolean | undefined, key: string) =>
+      isOn === undefined ? <Text dimColor>{`—${mark(key)}`}</Text> : isOn ? <Text color="success" weight="bold">{`ON${mark(key)}`}</Text> : <Text dimColor>{`OFF${mark(key)}`}</Text>
 
-    // The blank row above keeps the gauges apart from the transcript's output.
+    // The blank row above keeps the band apart from the transcript's output; a narrow
+    // terminal wraps its groups onto a second row rather than cutting the buttons off.
     return (
       <Box flexDirection="column" marginTop={1}>
-        <Text wrap="truncate-end">
-          {windows.map((window, index) => {
-            const segment = limitSegment(window, now, room)
-            return (
-              <Text>
-                {index > 0 ? BAND_GAP : ''}
-                <Text weight="bold">{segment.label}</Text>{' '}
-                {segment.bar !== undefined && <Text color={segment.tone}>{segment.bar.filled}</Text>}
-                {segment.bar !== undefined && <Text dimColor>{`${segment.bar.empty} `}</Text>}
-                <Text color={segment.tone} weight="bold">{segment.percent}</Text>
-                {segment.reset !== undefined && <Text dimColor>{` ${segment.reset}`}</Text>}
-                {segment.warn !== undefined && <Text color={segment.tone}>{` ${segment.warn}`}</Text>}
-              </Text>
-            )
-          })}
-        </Text>
+        <Box flexDirection="row" flexWrap="wrap" columnGap={BAND_GAP}>
+          {windows.length > 0 && (
+            <Text wrap="truncate-end">
+              <Text dimColor>잔여 </Text>
+              {windows.map((window, index) => {
+                const left = remaining(window)
+                return (
+                  <Text>
+                    {index > 0 ? ' · ' : ''}
+                    <Text weight="bold">{windowLabel(window.kind)}</Text>{' '}
+                    <Text color={remainingColor(left)} weight="bold">{`${left}%`}</Text>
+                  </Text>
+                )
+              })}
+            </Text>
+          )}
+          <Button plain key="workflows" onPress={press('workflows', () => toggleWorkflows($))}>
+            {'워크플로 '}
+            {toggle(state.workflows, 'workflows')}
+          </Button>
+          <Box flexDirection="row" columnGap={1}>
+            <Text dimColor>모델</Text>
+            {MODELS.map(one => {
+              const key = `model:${one.family}`
+              const onPress = press(key, () => chooseModel($, one.family))
+              return one.family === family ? (
+                <Button plain key={key} onPress={onPress}>
+                  <Text color="claude" weight="bold">{`${modelText(state.model)}${mark(key)}`}</Text>
+                </Button>
+              ) : (
+                <Button plain dimColor key={key} onPress={onPress}>
+                  {`${one.label}${mark(key)}`}
+                </Button>
+              )
+            })}
+          </Box>
+          <Box flexDirection="row" columnGap={1}>
+            <Text dimColor>effort</Text>
+            {EFFORTS.map(one => {
+              const key = `effort:${one.level}`
+              const onPress = press(key, () => chooseEffort($, one.level))
+              return one.level === state.effort ? (
+                <Button plain key={key} onPress={onPress}>
+                  <Text color="claude" weight="bold">{`${one.label}${mark(key)}`}</Text>
+                </Button>
+              ) : (
+                <Button plain dimColor key={key} onPress={onPress}>
+                  {`${one.label}${mark(key)}`}
+                </Button>
+              )
+            })}
+          </Box>
+          <Button plain key="ultracode" onPress={press('ultracode', () => toggleUltracode($))}>
+            {'울트라코드 '}
+            {isUltracode ? <Text color="claude" weight="bold">{`ON${mark('ultracode')}`}</Text> : <Text dimColor>{`OFF${mark('ultracode')}`}</Text>}
+          </Button>
+        </Box>
       </Box>
     )
   })
