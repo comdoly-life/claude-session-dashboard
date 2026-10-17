@@ -1,6 +1,6 @@
 {
   "name": "claude-session-dashboard",
-  "description": "Claude Code session dashboard mod: live pane of subagents, agent teams and workflows with progress and tokens; limit bars and model / effort / ultracode chips above the prompt",
+  "description": "Claude Code session dashboard mod: live pane of subagents, agent teams and workflows with progress and tokens; limit bars and model / effort / workflows / ultracode chips above the prompt",
   "owner": {
     "name": "comdoly-life"
   },
@@ -8,7 +8,7 @@
     {
       "name": "session-dashboard",
       "source": "./",
-      "description": "Live dashboard pane of the main session, subagents, agent teams and workflows with progress, tokens and run time; 5-hour / weekly limit bars and model, effort and ultracode chips above the prompt"
+      "description": "Live dashboard pane of the main session, subagents, agent teams and workflows with progress, tokens and run time; 5-hour / weekly limit bars and model, effort, workflows and ultracode chips above the prompt"
     }
   ]
 }

@@ -1,7 +1,7 @@
 {
   "name": "session-dashboard",
-  "version": "0.4.0",
-  "description": "Live dashboard pane (Korean UI): the main session, subagents, agent teams and workflows, each with what it is doing, progress (done/total), tokens and run time, plus detail tabs; above the prompt, the 5-hour / weekly limit bars with what is left, and chips for the model, effort and ultracode",
+  "version": "0.5.0",
+  "description": "Live dashboard pane (Korean UI): the main session, subagents, agent teams and workflows, each with what it is doing, progress (done/total), tokens and run time, plus detail tabs; above the prompt, the 5-hour / weekly limit bars with what is left, chips for the model and effort, and toggles for workflows and ultracode",
   "author": {
     "name": "comdoly-life"
   },

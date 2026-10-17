@@ -683,7 +683,7 @@ return agent('sum', { label: 'summary', phase: 'Summarize' })`
   await ui.unmount()
 })
 
-test('the band picks the model, effort and ultracode from its chips, each group lit in its own color', async ($, on) => {
+test('the band picks the model, effort, workflows and ultracode from its chips, each group lit in its own color', async ($, on) => {
   mock.clock(on, { now: NOW })
   mock.store(on)
   world(on)
@@ -731,8 +731,7 @@ test('the band picks the model, effort and ultracode from its chips, each group 
     const band = await $.ui.mount({ plugin: 'session-dashboard', surface, ...BAND })
     // No limit reading yet: the controls stand alone.
     expect(await band.find({ text: '잔여 ' })).toBeUndefined()
-    // Ultracode carries the workflows row: there is no button of its own for it.
-    expect(await band.find({ key: 'workflows' })).toBeUndefined()
+    expect(await band.find({ key: 'workflows' })).toBeDefined()
     expect(await band.find({ text: '오푸스 5.5' })).toBeDefined()
     expect(await band.find({ text: '페이블' })).toBeDefined()
     expect(await band.find({ key: 'effort:xhigh' })).toBeDefined()
@@ -747,6 +746,7 @@ test('the band picks the model, effort and ultracode from its chips, each group 
   expect(await lit(CHIP.model)).toEqual(['오푸스 5.5'])
   expect(await lit(CHIP.effort)).toEqual(['xhigh'])
   expect(await lit(CHIP.ultracode)).toEqual([])
+  expect(await lit(CHIP.workflows)).toEqual(['ON'])
   expect(await lit(CHIP.idle)).toEqual(['페이블', '소넷', '하이쿠', 'low', 'med', 'high', 'max', 'OFF'])
   await band.press({ key: 'model:sonnet' })
   expect(await lit(CHIP.model)).toEqual(['소넷 5.5'])
@@ -760,9 +760,11 @@ test('the band picks the model, effort and ultracode from its chips, each group 
   expect(await lit(CHIP.ultracode)).toEqual(['ON'])
   await band.press({ key: 'ultracode' })
   expect(await lit(CHIP.ultracode)).toEqual([])
-  // Workflows turned off in /config: ultracode reads off, and turning it on turns them on first.
-  await $.config.set({ key: 'workflows', value: false, previous: true, provider: { plugin: 'engine', tier: 'core' }, origin: { kind: 'composer' } })
+  // Workflows off from their own chip: ultracode reads off, and turning it on turns them on first.
+  await band.press({ key: 'workflows' })
+  expect(await lit(CHIP.workflows)).toEqual([])
   await band.press({ key: 'ultracode' })
+  expect(await lit(CHIP.workflows)).toEqual(['ON'])
   expect(await lit(CHIP.ultracode)).toEqual(['ON'])
 
   // A /clear fires no session.start: the band reads the model (changed meanwhile) and its effort again.
@@ -780,6 +782,7 @@ test('the band picks the model, effort and ultracode from its chips, each group 
     'effort: low',
     '울트라코드 켬 (이 세션만)',
     '울트라코드 끔',
+    '워크플로 끔 (울트라코드도 쓸 수 없음)',
     '워크플로를 켜고 울트라코드 켬 (이 세션만)',
   ])
 })

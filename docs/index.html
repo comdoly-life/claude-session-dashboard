@@ -98,6 +98,7 @@
   .chip { padding: 0 .5ch; background: var(--chip-idle); color: #fff; }
   .chip.model { background: #ffa36c; color: #000; font-weight: 700; }
   .chip.effort { background: #7cc4ff; color: #000; font-weight: 700; }
+  .chip.flow { background: #7ee0a1; color: #000; font-weight: 700; }
   .chip.ultra { background: #c49bff; color: #000; font-weight: 700; }
   .caption { font-size: 14px; color: var(--muted); margin: 10px 2px 0; }
   .legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 14px 0 0; padding: 0; list-style: none; font-size: 14px; color: var(--muted); }
@@ -125,12 +126,12 @@
     <p class="eyebrow">Claude Code mod</p>
     <h1>Claude Session Dashboard</h1>
     <p class="lead">Claude Code 세션에서 돌아가는 메인 세션, 서브에이전트, 에이전트 팀, 워크플로를 한 창에서 보여 줍니다.
-      프롬프트 위에서는 5시간·주간 한도를 보고 모델, effort, 울트라코드를 버튼으로 바꿉니다.</p>
+      프롬프트 위에서는 5시간·주간 한도를 보고 모델, effort, 워크플로, 울트라코드를 버튼으로 바꿉니다.</p>
   </header>
 
   <section aria-labelledby="preview">
     <h2 id="preview">미리 보기</h2>
-    <div class="term" role="img" aria-label="대시보드 창과 프롬프트 위 두 줄의 예시 화면">
+    <div class="term" role="img" aria-label="대시보드 창과 프롬프트 위 세 줄의 예시 화면">
       <div class="pane">
         <div class="row"><span class="b">대시보드 · 3개 실행 중</span><span class="dim">↑입력 ↓출력 · 시간</span></div>
         <div class="row"><span>☐ 메인 세션 (2/5)</span><span class="dim">↑230k ↓4.1k</span></div>
@@ -143,42 +144,42 @@
       </div>
       <div class="rule"></div>
       <div class="row"><span class="b">5시간</span> <span style="color:#ee9c2d">████████████</span><span class="dim">░░░░░░░░░░░░</span> <span class="dim">잔여 </span><span class="b" style="color:#ee9c2d">52%</span>   <span class="b">주간</span> <span style="color:#e63f13">███████████████████</span><span class="dim">░░░░░</span> <span class="dim">잔여 </span><span class="b" style="color:#e63f13">19%</span></div>
-      <div class="row"><span class="dim">모델</span> <span class="chip">페이블</span> <span class="chip model">오푸스 5.5</span> <span class="chip">소넷</span> <span class="chip">하이쿠</span>  <span class="dim">effort</span> <span class="chip">low</span> <span class="chip">med</span> <span class="chip">high</span> <span class="chip effort">xhigh</span> <span class="chip">max</span>  <span class="dim">울트라코드</span> <span class="chip ultra">ON</span></div>
+      <div class="row"><span class="dim">모델</span> <span class="chip">페이블</span> <span class="chip model">오푸스 5.5</span> <span class="chip">소넷</span> <span class="chip">하이쿠</span>  <span class="dim">effort</span> <span class="chip">low</span> <span class="chip">med</span> <span class="chip">high</span> <span class="chip effort">xhigh</span> <span class="chip">max</span></div>
+      <div class="row"><span class="dim">워크플로</span> <span class="chip flow">ON</span>  <span class="dim">울트라코드</span> <span class="chip ultra">ON</span></div>
       <div class="row dim">› </div>
     </div>
-    <p class="caption">위쪽이 대시보드 창, 구분선 아래가 프롬프트 바로 위에 붙는 두 줄입니다. 화면 문구는 한국어입니다.</p>
+    <p class="caption">위쪽이 대시보드 창, 구분선 아래가 프롬프트 바로 위에 붙는 세 줄입니다. 화면 문구는 한국어입니다.</p>
     <ul class="legend" aria-label="버튼 색">
       <li><span class="chip">회색</span>고르지 않은 버튼</li>
       <li><span class="chip model">주황</span>고른 모델</li>
       <li><span class="chip effort">파랑</span>고른 effort</li>
+      <li><span class="chip flow">초록</span>워크플로 켜짐</li>
       <li><span class="chip ultra">보라</span>울트라코드 켜짐</li>
     </ul>
   </section>
 
   <section aria-labelledby="install">
     <h2 id="install">설치</h2>
+    <p>공식 마켓플레이스에는 올라가 있지 않습니다. 저장소를 받아 내 컴퓨터의 마켓플레이스로 등록한 뒤 설치합니다.</p>
     <ol class="steps">
       <li>
-        <strong>Claude Code 버전 확인</strong>
-        Claude Code <code>2.1.300</code> 이상이 필요합니다. 셸에서 확인하세요.
-        <div class="cmd"><pre>claude --version</pre><button type="button" data-copy="claude --version">복사</button></div>
+        <strong>준비물 확인</strong>
+        Claude Code <code>2.1.300</code> 이상과 <code>git</code>이 필요합니다. 셸(터미널)에서 확인하세요.
+        <div class="cmd"><pre>claude --version
+git --version</pre><button type="button" data-copy="claude --version&#10;git --version">복사</button></div>
       </li>
       <li>
-        <strong>설치 명령 실행</strong>
-        Claude Code 터미널 세션의 프롬프트에 붙여 넣고 Enter를 누릅니다.
-        <div class="cmd"><pre>/plugin install session-dashboard --marketplace comdoly-life/claude-session-dashboard</pre><button type="button" data-copy="/plugin install session-dashboard --marketplace comdoly-life/claude-session-dashboard">복사</button></div>
-        셸에서 설치하려면:
-        <div class="cmd"><pre>claude plugin install session-dashboard --marketplace comdoly-life/claude-session-dashboard</pre><button type="button" data-copy="claude plugin install session-dashboard --marketplace comdoly-life/claude-session-dashboard">복사</button></div>
-      </li>
-      <li>
-        <strong>질문에 답하기</strong>
-        마켓플레이스를 추가할지 물으면 <code>y</code>를 누르고, 설치 범위를 고릅니다.
-        모든 프로젝트에서 쓰려면 <code>user</code>(기본값), 이 프로젝트에서만 쓰려면 <code>project</code>나 <code>local</code>을 고르세요.
+        <strong>받아서 설치하기</strong>
+        셸에서 세 줄을 차례로 실행합니다. 저장소를 홈 폴더의 <code>claude-session-dashboard</code>에 받고, 그 폴더를 마켓플레이스로 등록한 뒤 설치합니다.
+        <div class="cmd"><pre>git clone https://github.com/comdoly-life/claude-session-dashboard.git ~/claude-session-dashboard
+claude plugin marketplace add ~/claude-session-dashboard
+claude plugin install session-dashboard@claude-session-dashboard</pre><button type="button" data-copy="git clone https://github.com/comdoly-life/claude-session-dashboard.git ~/claude-session-dashboard&#10;claude plugin marketplace add ~/claude-session-dashboard&#10;claude plugin install session-dashboard@claude-session-dashboard">복사</button></div>
+        <span class="muted">다른 폴더에 받으려면 두 줄의 <code>~/claude-session-dashboard</code>를 같은 경로로 바꾸세요. 받은 폴더는 지우지 마세요. Claude Code가 그 폴더에서 mod를 읽습니다.</span>
       </li>
       <li>
         <strong>불러오기</strong>
-        이미 열려 있는 세션이면 <code>/reload-plugins</code>를 실행하고, 아니면 새 세션을 시작합니다.
-        프롬프트 위에 두 줄이 생기고, 터미널이 충분히 넓으면 대시보드 창이 옆에 열립니다.
+        이미 열려 있는 Claude Code 세션이면 <code>/reload-plugins</code>를 실행하고, 아니면 새 세션을 시작합니다.
+        프롬프트 위에 세 줄이 생기고, 터미널이 충분히 넓으면 대시보드 창이 옆에 열립니다.
         <div class="cmd"><pre>/reload-plugins</pre><button type="button" data-copy="/reload-plugins">복사</button></div>
       </li>
     </ol>
@@ -194,7 +195,8 @@
           <tr><td>버튼 누르기</td><td>전체 화면 모드에서는 마우스로 클릭합니다. 키보드로는 <code>ctrl+x</code> 다음 <code>tab</code>으로 버튼 줄에 들어가 <code>Tab</code>으로 옮기고 <code>Enter</code>로 누릅니다.</td></tr>
           <tr><td>모델 바꾸기</td><td>페이블·오푸스·소넷·하이쿠 중 하나를 누르면 그 계열의 최신 모델로 바뀝니다. <code>/model</code>과 같아서 새 세션의 기본값으로도 저장됩니다.</td></tr>
           <tr><td>effort 바꾸기</td><td>low부터 max까지 누릅니다. <code>/effort</code>와 같고, 턴이 돌고 있으면 그 턴이 끝난 뒤 적용됩니다.</td></tr>
-          <tr><td>울트라코드 켜고 끄기</td><td>울트라코드 버튼을 누릅니다. 이 세션에만 적용됩니다.</td></tr>
+          <tr><td>워크플로 켜고 끄기</td><td>워크플로 버튼을 누릅니다. <code>/config</code>의 Dynamic workflows와 같습니다.</td></tr>
+          <tr><td>울트라코드 켜고 끄기</td><td>울트라코드 버튼을 누릅니다. 이 세션에만 적용되고, 워크플로가 꺼져 있으면 함께 켭니다.</td></tr>
           <tr><td>세부 내용 보기</td><td>대시보드 창에서 항목을 클릭하면 탭이 열립니다. 맡은 일, 지금 하는 일, 토큰 내역, 할 일, 최근 호출을 보여 줍니다.</td></tr>
         </tbody>
       </table>
@@ -207,16 +209,18 @@
     <div class="card">
       <p><strong>울트라코드</strong>는 이 세션의 모든 작업을 워크플로로 돌립니다. 워크플로는 일을 여러 에이전트에게 나눠 맡겨 동시에 처리하는 방식이라, 결과는 꼼꼼해지지만 토큰을 훨씬 많이 씁니다.</p>
       <p><strong>워크플로 기능</strong>(<code>/config</code>의 Dynamic workflows)은 워크플로를 쓸 수 있게 하는 스위치입니다. 켜져 있으면 "워크플로로 해 줘"처럼 직접 요청할 때만 워크플로가 돌고, 꺼져 있으면 아예 쓰지 않습니다.</p>
-      <p>그래서 이 mod에는 울트라코드 버튼 하나만 둡니다. 울트라코드를 켤 때 워크플로 기능이 꺼져 있으면 함께 켜고, 울트라코드를 꺼도 워크플로 기능은 켜 둡니다. 워크플로를 아예 막고 싶을 때만 <code>/config</code>에서 끄면 됩니다.</p>
+      <p>이 mod는 둘 다 버튼으로 둡니다. 울트라코드를 켤 때 워크플로가 꺼져 있으면 함께 켜고, 울트라코드를 꺼도 워크플로는 켜 둡니다. 워크플로를 끄면 울트라코드도 쓸 수 없습니다.</p>
     </div>
   </section>
 
   <section aria-labelledby="manage">
     <h2 id="manage">업데이트와 삭제</h2>
-    <p>새 버전으로 올리기(적용하려면 Claude Code를 다시 시작합니다):</p>
-    <div class="cmd"><pre>claude plugin update session-dashboard@claude-session-dashboard</pre><button type="button" data-copy="claude plugin update session-dashboard@claude-session-dashboard">복사</button></div>
-    <p>지우기:</p>
-    <div class="cmd"><pre>claude plugin uninstall session-dashboard@claude-session-dashboard</pre><button type="button" data-copy="claude plugin uninstall session-dashboard@claude-session-dashboard">복사</button></div>
+    <p>새 버전으로 올리기(새 코드를 받은 뒤, 열린 세션에서는 <code>/reload-plugins</code>):</p>
+    <div class="cmd"><pre>git -C ~/claude-session-dashboard pull
+claude plugin update session-dashboard@claude-session-dashboard</pre><button type="button" data-copy="git -C ~/claude-session-dashboard pull&#10;claude plugin update session-dashboard@claude-session-dashboard">복사</button></div>
+    <p>지우기(그다음 받은 폴더도 지워도 됩니다):</p>
+    <div class="cmd"><pre>claude plugin uninstall session-dashboard@claude-session-dashboard
+claude plugin marketplace remove claude-session-dashboard</pre><button type="button" data-copy="claude plugin uninstall session-dashboard@claude-session-dashboard&#10;claude plugin marketplace remove claude-session-dashboard">복사</button></div>
   </section>
 
   <section aria-labelledby="notes">
@@ -231,8 +235,10 @@
 
   <section aria-labelledby="english" lang="en">
     <h2 id="english">In English</h2>
-    <p>A Claude Code mod with a live pane of the main session, subagents, agent teams and workflows (what each is doing, progress, tokens and run time), and two rows above the prompt: the 5-hour / weekly limit bars with what is left, and chips for the model, effort and ultracode. The UI text is in Korean. It needs Claude Code 2.1.300 or later. To install, run this at the prompt of a Claude Code terminal session, answer <code>y</code> to add the marketplace, then pick a scope:</p>
-    <div class="cmd"><pre>/plugin install session-dashboard --marketplace comdoly-life/claude-session-dashboard</pre><button type="button" data-copy="/plugin install session-dashboard --marketplace comdoly-life/claude-session-dashboard">Copy</button></div>
+    <p>A Claude Code mod with a live pane of the main session, subagents, agent teams and workflows (what each is doing, progress, tokens and run time), and three rows above the prompt: the 5-hour / weekly limit bars with what is left, chips for the model and effort, and toggles for workflows and ultracode. The UI text is in Korean. It is not on the official marketplace: it needs Claude Code 2.1.300 or later and git. Clone the repository, add the clone as a local marketplace, then install, in a shell:</p>
+    <div class="cmd"><pre>git clone https://github.com/comdoly-life/claude-session-dashboard.git ~/claude-session-dashboard
+claude plugin marketplace add ~/claude-session-dashboard
+claude plugin install session-dashboard@claude-session-dashboard</pre><button type="button" data-copy="git clone https://github.com/comdoly-life/claude-session-dashboard.git ~/claude-session-dashboard&#10;claude plugin marketplace add ~/claude-session-dashboard&#10;claude plugin install session-dashboard@claude-session-dashboard">Copy</button></div>
   </section>
 
   <footer>

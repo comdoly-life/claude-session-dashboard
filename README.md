@@ -2,13 +2,14 @@
 
 Claude Code 세션에서 지금 돌아가는 모든 작업을 한 창에서 보여 주는 mod입니다.
 메인 세션, 서브에이전트, 에이전트 팀, 워크플로와 그 에이전트마다 무엇을 하고 있는지, 진행 상황(완료/전체),
-쓴 토큰과 실행 시간을 표시하고, 프롬프트 위 두 줄에는 5시간·주간 한도 막대와 남은 %, 모델·effort·울트라코드 버튼을 띄웁니다. (화면 문구는 한국어)
+쓴 토큰과 실행 시간을 표시하고, 프롬프트 위 세 줄에는 5시간·주간 한도 막대와 남은 %, 모델·effort 버튼, 워크플로·울트라코드 버튼을 띄웁니다. (화면 문구는 한국어)
 
 **설치 안내 페이지: https://comdoly-life.github.io/claude-session-dashboard/**
 
 A Claude Code mod: a live pane of everything running in the session — the main session, subagents, agent teams
-and workflows — with what each is doing, progress (done/total), tokens and run time, detail tabs, and two rows above
-the prompt: the 5-hour / weekly limit bars with what is left, and chips for the model, effort and ultracode. The UI
+and workflows — with what each is doing, progress (done/total), tokens and run time, detail tabs, and three rows above
+the prompt: the 5-hour / weekly limit bars with what is left, chips for the model and effort, and toggles for
+workflows and ultracode. The UI
 text is in Korean.
 
 ```
@@ -30,35 +31,43 @@ text is in Korean.
 ☑ 범용 에이전트 · 문서 조사 (1/1)          ↑20k ↓1k · 40s
 ```
 
-프롬프트 위 두 줄(대괄호는 버튼, 선택된 것은 밝은 색 배경):
+프롬프트 위 세 줄(대괄호는 버튼, 선택된 것은 밝은 색 배경):
 
 ```
 5시간 ████████████░░░░░░░░░░░░ 잔여 52%   주간 ███████████████████░░░░░ 잔여 19%
-모델 [페이블] [오푸스 5.5] [소넷] [하이쿠]  effort [low] [med] [high] [xhigh] [max]  울트라코드 [OFF]
+모델 [페이블] [오푸스 5.5] [소넷] [하이쿠]  effort [low] [med] [high] [xhigh] [max]
+워크플로 [ON]  울트라코드 [OFF]
 ```
 
 ## 설치 / Install
 
-Claude Code 터미널 세션의 프롬프트에서:
+공식 마켓플레이스에는 올라가 있지 않습니다. 저장소를 받아 내 컴퓨터의 마켓플레이스로 등록한 뒤 설치합니다.
+셸(터미널)에서 차례로 실행하세요. Claude Code 2.1.300 이상과 `git` 이 필요합니다.
 
 ```
-/plugin install session-dashboard --marketplace comdoly-life/claude-session-dashboard
+git clone https://github.com/comdoly-life/claude-session-dashboard.git ~/claude-session-dashboard
+claude plugin marketplace add ~/claude-session-dashboard
+claude plugin install session-dashboard@claude-session-dashboard
 ```
 
-셸에서:
+이미 열려 있는 Claude Code 세션에서는 `/reload-plugins` 로 불러오고, 아니면 새 세션을 시작합니다.
+
+업데이트(새 코드를 받은 뒤 열린 세션에서 `/reload-plugins`):
 
 ```
-claude plugin install session-dashboard --marketplace comdoly-life/claude-session-dashboard
-```
-
-마켓플레이스를 추가할지 물으면 `y`, 이어서 설치 범위(scope)를 고릅니다. 이미 열려 있는 세션에는 `/reload-plugins` 로 불러옵니다.
-
-업데이트와 삭제:
-
-```
+git -C ~/claude-session-dashboard pull
 claude plugin update session-dashboard@claude-session-dashboard
-claude plugin uninstall session-dashboard@claude-session-dashboard
 ```
+
+삭제:
+
+```
+claude plugin uninstall session-dashboard@claude-session-dashboard
+claude plugin marketplace remove claude-session-dashboard
+```
+
+Not on the official marketplace: clone the repository, add the clone as a local marketplace, then install
+(the three commands above, run in a shell).
 
 ## 화면
 
@@ -72,18 +81,19 @@ claude plugin uninstall session-dashboard@claude-session-dashboard
   - 맨 위에 **맡은 일**(받은 지시·요청·워크플로 설명)과 **지금**(하고 있는 일) 두 줄.
   - 상태와 시간, 종류, 토큰 내역(새 입력·캐시 읽기·캐시 쓰기·요청 수), 할 일 체크리스트, 최근 호출, 마지막 응답.
   - 워크플로 탭은 진행 막대와 단계별 진행(`Read 3/3 ✓ › Summarize 0/1`), 에이전트 목록(클릭하면 그 에이전트 탭).
-- **프롬프트 위 두 줄**
+- **프롬프트 위 세 줄**
   - 첫 줄 `5시간 ████░░░░ 잔여 52%   주간 …`: 5시간·주간(·지출) 한도. 막대는 전체 중 쓴 만큼을 색으로 칠하고,
     뒤에 남은 비율을 %로 씁니다. 색은 남은 양이 60% 이상이면 초록, 그 아래로 내려갈수록 주황 → 주홍 → 진한 빨강.
     터미널이 좁으면 막대를 줄이거나 빼고 숫자만 남깁니다.
-  - 둘째 줄은 버튼입니다. 고르지 않은 버튼은 회색 배경, 고른 버튼은 묶음마다 다른 밝은 색 배경입니다
-    (모델 주황, effort 파랑, 울트라코드 보라).
+  - 둘째 줄은 모델·effort, 셋째 줄은 워크플로·울트라코드 버튼입니다. 고르지 않은(꺼진) 버튼은 회색 배경,
+    고른(켜진) 버튼은 묶음마다 다른 밝은 색 배경입니다(모델 주황, effort 파랑, 워크플로 초록, 울트라코드 보라).
   - `모델 페이블 오푸스 소넷 하이쿠`: 누르면 그 계열의 최신 모델(별칭 `fable`·`opus`·`sonnet`·`haiku`)로 바꾸고,
     고른 모델은 버전과 함께(`오푸스 5.5`) 표시합니다. Fable 처럼 동의가 먼저 필요한 모델은 `/model` 로 넘깁니다.
   - `effort low med high xhigh max`: `/effort <level>` 과 같습니다. 모델이 지원하지 않는 단계면 그 안내가 뜹니다.
-  - `울트라코드 ON/OFF`: `/effort ultracode on|off` (이 세션만). 모든 작업을 워크플로(여러 에이전트)로 돌립니다.
-    `/config` 의 Dynamic workflows 가 꺼져 있으면 그것부터 켜고, 끌 때는 Dynamic workflows 를 그대로 둡니다
-    (울트라코드를 꺼도 "워크플로로 해 줘"처럼 직접 요청하면 워크플로를 쓸 수 있도록).
+  - `워크플로 ON/OFF`: `/config` 의 Dynamic workflows. 켜져 있으면 "워크플로로 해 줘"처럼 직접 요청할 때 워크플로
+    (여러 에이전트에게 나눠 맡기는 방식)를 쓸 수 있고, 끄면 워크플로도 울트라코드도 쓰지 않습니다.
+  - `울트라코드 ON/OFF`: `/effort ultracode on|off` (이 세션만). 요청하지 않아도 모든 작업을 워크플로로 돌립니다.
+    워크플로가 꺼져 있으면 그것부터 켜고, 울트라코드를 끌 때는 워크플로를 그대로 둡니다.
   - 버튼은 마우스 클릭(전체 화면 모드) 또는 ctrl+x tab 으로 줄에 들어가 Tab·Enter 로 누릅니다. 바뀌는 중인 버튼엔
     `…` 이 붙고, 결과는 토스트로 알립니다. 실행 중인 턴이 있으면 `/effort` 는 그 턴이 끝난 뒤 적용됩니다.
   - 터미널이 좁으면 버튼 묶음이 다음 줄로 넘어갑니다. 직접 `/model`·`/effort`·`/config` 로 바꿔도 따라갑니다.
@@ -99,7 +109,7 @@ claude plugin uninstall session-dashboard@claude-session-dashboard
   저장된 스크립트를 5초마다 읽어, 플러그인을 다시 불러오기 전에 시작한 실행도 보여 줍니다
   (`HOME`, `CLAUDE_CONFIG_DIR` 환경 변수로 위치를 찾습니다).
 - 네트워크로 아무것도 보내지 않습니다. 플러그인 저장소(`$.store`)에는 한도 기록과 최근 훅 오류만 남깁니다.
-- 모델 버튼은 `$.config.set`, effort·울트라코드 버튼은 `$.command.run` 으로 엔진의 기본 동작을 그대로 씁니다
+- 모델·워크플로 버튼은 `$.config.set`, effort·울트라코드 버튼은 `$.command.run` 으로 엔진의 기본 동작을 그대로 씁니다
   (`/model`·`/effort` 처럼 모델과 effort 는 새 세션의 기본값으로도 저장됩니다). 울트라코드를 켤 때 Dynamic workflows 가
   꺼져 있으면 `$.config.set` 으로 먼저 켭니다.
 - 훅에서 오류가 나면 보드 아래에 `⚠` 줄로 보여 줍니다.

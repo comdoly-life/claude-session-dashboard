@@ -372,6 +372,16 @@ async function toggleUltracode($: Engine): Promise<string> {
   return hasOpened ? '워크플로를 켜고 울트라코드 켬 (이 세션만)' : '울트라코드 켬 (이 세션만)'
 }
 
+/** The `/config` row `workflows` (Dynamic workflows): off takes ultracode down with it. */
+async function toggleWorkflows($: Engine): Promise<string> {
+  const isOn = (await read($, controls)).workflows !== true
+  const set = await $.config.set({ key: WORKFLOWS_ROW, value: isOn })
+  if (set.deny !== undefined) return `워크플로를 바꾸지 못했습니다: ${set.deny}`
+  const workflows = set.value === true
+  await update($, controls, now => ({ ...now, workflows }))
+  return workflows ? '워크플로 켬' : '워크플로 끔 (울트라코드도 쓸 수 없음)'
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -732,8 +742,8 @@ export const register: Register = on => {
       </Button>
     )
 
-    // The blank row above keeps the band apart from the transcript's output; the limits and
-    // the controls keep a row each, and a narrow terminal wraps the controls' groups.
+    // The blank row above keeps the band apart from the transcript's output; the limits, the
+    // model and effort, and workflows with ultracode keep a row each; a narrow terminal wraps groups.
     return (
       <Box flexDirection="column" marginTop={1}>
         {windows.length > 0 && (
@@ -769,6 +779,14 @@ export const register: Register = on => {
               const key = `effort:${one.level}`
               return chip(key, one.label, one.level === state.effort ? CHIP.effort : undefined, press(key, () => chooseEffort($, one.level)))
             })}
+          </Box>
+        </Box>
+        <Box flexDirection="row" flexWrap="wrap" columnGap={BAND_GAP}>
+          <Box flexDirection="row" columnGap={1}>
+            <Text dimColor>워크플로</Text>
+            {state.workflows === true
+              ? chip('workflows', 'ON', CHIP.workflows, press('workflows', () => toggleWorkflows($)))
+              : chip('workflows', state.workflows === false ? 'OFF' : '—', undefined, press('workflows', () => toggleWorkflows($)))}
           </Box>
           <Box flexDirection="row" columnGap={1}>
             <Text dimColor>울트라코드</Text>
