@@ -15,6 +15,9 @@ const MAX_SAMPLES = 600
 const SAME_RESET_MS = 5 * 60_000
 /** Remaining limit at or above this is drawn green; below it, ever redder. */
 const SAFE_REMAINING = 60
+/** A limit's bar, in cells: none where less room is left, never longer. */
+const MIN_BAR = 6
+const MAX_BAR = 24
 const DETAIL_KEYS = ['command', 'file_path', 'notebook_path', 'pattern', 'url', 'query', 'skill', 'description', 'prompt']
 
 export const ZERO_TOKENS: Tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, requests: 0 }
@@ -249,6 +252,18 @@ export function remainingColor(left: number): Color {
   if (r >= SAFE_REMAINING) return 'success'
   const t = r / SAFE_REMAINING
   return hsl(40 * t, 85, 45 + 12 * t)
+}
+
+/** A limit window as the band draws it: the share used as a filled bar, then what is left. */
+export type LimitBar = { label: string; used: string; free: string; left: number; color: Color }
+
+/** Fits a window into `room` cells: the bar takes what its label and `잔여 N%` leave, or nothing. */
+export function limitBar(window: LimitWindow, room: number): LimitBar {
+  const left = remaining(window)
+  const label = windowLabel(window.kind)
+  const width = Math.min(MAX_BAR, room - cells(label) - cells(`잔여 ${left}%`) - 2)
+  const bar = width >= MIN_BAR ? gauge(100 - left, width) : { filled: '', empty: '' }
+  return { label, used: bar.filled, free: bar.empty, left, color: remainingColor(left) }
 }
 
 function hsl(hue: number, saturation: number, lightness: number): string {

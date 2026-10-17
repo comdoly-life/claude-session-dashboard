@@ -22,6 +22,18 @@ const LEVELS = new Set<string>(EFFORTS.map(one => one.level))
 
 export const NO_CONTROLS: Controls = { ultracode: false }
 
+/**
+ * The band's chips: an idle one on the theme's gray, a group's pick on that group's own
+ * bright color in dark ink, so the model, the effort and ultracode tell apart at a glance.
+ */
+export const CHIP = {
+  idle: 'subtle',
+  ink: '#000000',
+  model: '#ffa36c',
+  effort: '#7cc4ff',
+  ultracode: '#c49bff',
+} as const
+
 export function isEffortLevel(value: unknown): value is EffortLevel {
   return typeof value === 'string' && LEVELS.has(value)
 }

@@ -3,7 +3,7 @@ import type { AgentInfo, ConfigRow, EngineInterface, Register, SessionUsage, Set
 
 import type { Activity, Controls, EffortLevel, LimitWindow, Meter, ModelFamily, Tabs, TaskItem, Todo, WorkflowCall } from '../types'
 import { ALL, buildBoard, closeTab, openTab, showTab } from './board'
-import { EFFORTS, MODELS, NO_CONTROLS, afterCommand, effortOf, familyOf, isEffortLevel, isRefusal, modelText, savedEffort } from './controls'
+import { CHIP, EFFORTS, MODELS, NO_CONTROLS, afterCommand, effortOf, familyOf, isEffortLevel, isRefusal, modelText, savedEffort } from './controls'
 import {
   MAIN,
   activityOf,
@@ -14,11 +14,9 @@ import {
   freshActivity,
   isCurrent,
   recordLimit,
-  remaining,
-  remainingColor,
+  limitBar,
   sumTokens,
   tokenText,
-  windowLabel,
 } from './format'
 import { drawPane } from './view'
 import {
@@ -50,6 +48,7 @@ const MAX_RUNS = 12
 /** A run whose journal and agents have been still this long has stopped unseen. */
 const STALE_MS = 15 * 60_000
 const BAND_GAP = 2
+const LIMIT_GAP = '   '
 const MODEL_ROW = 'model'
 const WORKFLOWS_ROW = 'workflows'
 // The Agent tool's own call spans a foreground subagent's run, and the
@@ -345,24 +344,32 @@ async function chooseEffort($: Engine, level: EffortLevel): Promise<string> {
   return effort === level ? `effort: ${level}` : (ran.text ?? `effort: ${effort ?? '?'}`)
 }
 
-async function toggleUltracode($: Engine): Promise<string> {
-  const now = await read($, controls)
-  if (now.workflows === false) return '울트라코드는 워크플로를 켠 뒤에 쓸 수 있습니다.'
-  const args = `ultracode ${now.ultracode ? 'off' : 'on'}`
-  const ran = await $.command.run({ command: 'effort', args })
-  await update($, controls, current => afterCommand(current, 'effort', args, ran.text))
-  const isOn = (await read($, controls)).ultracode
-  if (isOn === now.ultracode) return ran.text ?? '울트라코드를 바꾸지 못했습니다.'
-  return isOn ? '울트라코드 켬 (이 세션만)' : '울트라코드 끔'
+/** Whether the band draws ultracode on: it runs on dynamic workflows, so with them off it is off. */
+function isUltracodeOn(state: Controls): boolean {
+  return state.ultracode && state.workflows !== false
 }
 
-async function toggleWorkflows($: Engine): Promise<string> {
-  const isOn = (await read($, controls)).workflows !== true
-  const set = await $.config.set({ key: WORKFLOWS_ROW, value: isOn })
-  if (set.deny !== undefined) return `워크플로를 바꾸지 못했습니다: ${set.deny}`
-  const workflows = set.value === true
-  await update($, controls, now => ({ ...now, workflows }))
-  return workflows ? '워크플로 켬' : '워크플로 끔'
+/**
+ * Ultracode on or off. On needs the `/config` row `workflows` (Dynamic workflows), which
+ * it turns on first where it is off; off leaves workflows on, for a workflow asked for by name.
+ */
+async function toggleUltracode($: Engine): Promise<string> {
+  const now = await read($, controls)
+  const wasOn = isUltracodeOn(now)
+  let hasOpened = false
+  if (!wasOn && now.workflows === false) {
+    const set = await $.config.set({ key: WORKFLOWS_ROW, value: true })
+    if (set.deny !== undefined) return `워크플로를 켜지 못해 울트라코드를 켤 수 없습니다: ${set.deny}`
+    await update($, controls, current => ({ ...current, workflows: true }))
+    hasOpened = true
+  }
+  const args = `ultracode ${wasOn ? 'off' : 'on'}`
+  const ran = await $.command.run({ command: 'effort', args })
+  await update($, controls, current => afterCommand(current, 'effort', args, ran.text))
+  const isOn = isUltracodeOn(await read($, controls))
+  if (isOn === wasOn) return ran.text ?? '울트라코드를 바꾸지 못했습니다.'
+  if (!isOn) return '울트라코드 끔'
+  return hasOpened ? '워크플로를 켜고 울트라코드 켬 (이 세션만)' : '울트라코드 켬 (이 세션만)'
 }
 
 export const register: Register = on => {
@@ -712,73 +719,63 @@ export const register: Register = on => {
 
     const { Box, Text, Button } = $.ui.resolve(e)
     const press = (key: string, work: () => Promise<string>) => () => act($, key, work)
-    const mark = (key: string) => (state.pending === key ? '…' : '')
     const family = familyOf(state.model)
-    const hasWorkflows = state.workflows !== false
-    const isUltracode = state.ultracode && hasWorkflows
-    const toggle = (isOn: boolean | undefined, key: string) =>
-      isOn === undefined ? <Text dimColor>{`—${mark(key)}`}</Text> : isOn ? <Text color="success" weight="bold">{`ON${mark(key)}`}</Text> : <Text dimColor>{`OFF${mark(key)}`}</Text>
+    const room = Math.floor((e.props.bodyColumns - LIMIT_GAP.length * (windows.length - 1)) / Math.max(1, windows.length))
+    // A chip: the gray of an idle button, or its group's bright color once picked.
+    const chip = (key: string, label: string, picked: string | undefined, onPress: () => void) => (
+      <Button plain key={key} onPress={onPress}>
+        {picked === undefined ? (
+          <Text backgroundColor={CHIP.idle} color="text">{` ${label}${state.pending === key ? '…' : ''} `}</Text>
+        ) : (
+          <Text backgroundColor={picked} color={CHIP.ink} weight="bold">{` ${label}${state.pending === key ? '…' : ''} `}</Text>
+        )}
+      </Button>
+    )
 
-    // The blank row above keeps the band apart from the transcript's output; a narrow
-    // terminal wraps its groups onto a second row rather than cutting the buttons off.
+    // The blank row above keeps the band apart from the transcript's output; the limits and
+    // the controls keep a row each, and a narrow terminal wraps the controls' groups.
     return (
       <Box flexDirection="column" marginTop={1}>
+        {windows.length > 0 && (
+          <Text wrap="truncate-end">
+            {windows.map((window, index) => {
+              const bar = limitBar(window, room)
+              return (
+                <Text>
+                  {index > 0 ? LIMIT_GAP : ''}
+                  <Text weight="bold">{bar.label}</Text>{' '}
+                  {bar.used !== '' && <Text color={bar.color}>{bar.used}</Text>}
+                  {bar.free !== '' && <Text dimColor>{bar.free}</Text>}
+                  {bar.used !== '' || bar.free !== '' ? ' ' : ''}
+                  <Text dimColor>잔여 </Text>
+                  <Text color={bar.color} weight="bold">{`${bar.left}%`}</Text>
+                </Text>
+              )
+            })}
+          </Text>
+        )}
         <Box flexDirection="row" flexWrap="wrap" columnGap={BAND_GAP}>
-          {windows.length > 0 && (
-            <Text wrap="truncate-end">
-              <Text dimColor>잔여 </Text>
-              {windows.map((window, index) => {
-                const left = remaining(window)
-                return (
-                  <Text>
-                    {index > 0 ? ' · ' : ''}
-                    <Text weight="bold">{windowLabel(window.kind)}</Text>{' '}
-                    <Text color={remainingColor(left)} weight="bold">{`${left}%`}</Text>
-                  </Text>
-                )
-              })}
-            </Text>
-          )}
-          <Button plain key="workflows" onPress={press('workflows', () => toggleWorkflows($))}>
-            {'워크플로 '}
-            {toggle(state.workflows, 'workflows')}
-          </Button>
           <Box flexDirection="row" columnGap={1}>
             <Text dimColor>모델</Text>
             {MODELS.map(one => {
               const key = `model:${one.family}`
-              const onPress = press(key, () => chooseModel($, one.family))
-              return one.family === family ? (
-                <Button plain key={key} onPress={onPress}>
-                  <Text color="claude" weight="bold">{`${modelText(state.model)}${mark(key)}`}</Text>
-                </Button>
-              ) : (
-                <Button plain dimColor key={key} onPress={onPress}>
-                  {`${one.label}${mark(key)}`}
-                </Button>
-              )
+              const isPicked = one.family === family
+              return chip(key, isPicked ? modelText(state.model) : one.label, isPicked ? CHIP.model : undefined, press(key, () => chooseModel($, one.family)))
             })}
           </Box>
           <Box flexDirection="row" columnGap={1}>
             <Text dimColor>effort</Text>
             {EFFORTS.map(one => {
               const key = `effort:${one.level}`
-              const onPress = press(key, () => chooseEffort($, one.level))
-              return one.level === state.effort ? (
-                <Button plain key={key} onPress={onPress}>
-                  <Text color="claude" weight="bold">{`${one.label}${mark(key)}`}</Text>
-                </Button>
-              ) : (
-                <Button plain dimColor key={key} onPress={onPress}>
-                  {`${one.label}${mark(key)}`}
-                </Button>
-              )
+              return chip(key, one.label, one.level === state.effort ? CHIP.effort : undefined, press(key, () => chooseEffort($, one.level)))
             })}
           </Box>
-          <Button plain key="ultracode" onPress={press('ultracode', () => toggleUltracode($))}>
-            {'울트라코드 '}
-            {isUltracode ? <Text color="claude" weight="bold">{`ON${mark('ultracode')}`}</Text> : <Text dimColor>{`OFF${mark('ultracode')}`}</Text>}
-          </Button>
+          <Box flexDirection="row" columnGap={1}>
+            <Text dimColor>울트라코드</Text>
+            {isUltracodeOn(state)
+              ? chip('ultracode', 'ON', CHIP.ultracode, press('ultracode', () => toggleUltracode($)))
+              : chip('ultracode', 'OFF', undefined, press('ultracode', () => toggleUltracode($)))}
+          </Box>
         </Box>
       </Box>
     )
