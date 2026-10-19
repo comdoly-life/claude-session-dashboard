@@ -1,7 +1,7 @@
 import type { Peer } from '../types'
 import { cells } from './format'
 
-/** This session's own color: its row, its `[이 세션]` chip and the folder that holds it. */
+/** This session's own color: its row, its `[작업 세션]` tag and the folder that holds it (`[작업폴더]`). */
 export const MINE = '#5fd7ff'
 
 /** A registry status in words and the color of its dot. */

@@ -39,7 +39,9 @@ export type Scene = {
   end: (peer: Peer) => void
 }
 
-const MINE_TAG = '[이 세션]'
+/** This session's folder and this session itself, as the lists tag them. */
+const FOLDER_TAG = '[작업폴더]'
+const MINE_TAG = '[작업 세션]'
 /** The message chip on a session's row. */
 const ROW_MESSAGE = '메시지'
 
@@ -82,20 +84,36 @@ export function drawPane(scene: Scene) {
   const shown = scene.tabs.open.find(tab => tab.key === scene.tabs.active)
   return (
     <Box flexDirection="column">
-      {scene.tabs.open.length > 0 && drawTabBar(scene)}
+      {drawTabBar(scene)}
       {shown === undefined ? drawList(scene) : drawDetail(scene, shown.key)}
     </Box>
   )
 }
 
+/** Whether the list shows this session's folder, where its board is, rather than every session or another folder. */
+function isHomeList(scene: Scene): boolean {
+  return scene.scope.level === 'folder' && (scene.scope.folder === undefined || scene.scope.folder === scene.peers.folder)
+}
+
+/**
+ * The tabs on top: every session and this session's own view, always there, then the detail tabs
+ * opened from them. Another folder's sessions count as the every-session view they were reached from.
+ */
 function drawTabBar(scene: Scene) {
   const { Box, Text, Button } = scene.kit
-  const isBoard = scene.tabs.active === ALL || !scene.tabs.open.some(tab => tab.key === scene.tabs.active)
+  const isList = scene.tabs.active === ALL || !scene.tabs.open.some(tab => tab.key === scene.tabs.active)
+  const isHome = isHomeList(scene)
+  const top = (key: string, word: string, isActive: boolean, onPress: () => void) => (
+    <Button key={key} label={word} {...(isActive && { variant: 'primary' as const })} onPress={onPress}>
+      {word}
+    </Button>
+  )
   return (
     <Box flexDirection="row" flexWrap="wrap" marginBottom={1}>
-      <Button key="tab:all" label="목록" {...(isBoard && { variant: 'primary' as const })} onPress={() => scene.show(ALL)}>
-        목록
-      </Button>
+      {top('top:all', '모든 세션', isList && !isHome, () => scene.goAll())}
+      <Text> </Text>
+      {top('top:mine', '현재 세션', isList && isHome, () => scene.goFolder())}
+      {scene.tabs.open.length > 0 && <Text dimColor> │</Text>}
       {scene.tabs.open.map(tab => (
         <Box flexDirection="row">
           <Text> </Text>
@@ -131,20 +149,10 @@ function drawAll(scene: Scene) {
   const folders = foldersOf(list, minePid)
   return (
     <Box flexDirection="column">
-      <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
-        <Button key="scope:folder" plain label="↓ 이 폴더" onPress={() => scene.goFolder()}>
-          <Text backgroundColor={CHIP.idle} color="text">
-            {' ↓ 이 폴더 '}
-          </Text>
-        </Button>
-        <Text weight="bold" color="claude">
-          모든 세션
-        </Text>
-        <Text dimColor>{`폴더 ${folders.length}개 · 세션 ${list.length}개`}</Text>
-      </Box>
+      <Text dimColor>{`폴더 ${folders.length}개 · 세션 ${list.length}개`}</Text>
       {folders.map(folder => {
         const count = ` · ${folder.sessions.length}개${folder.busy > 0 ? ` (${folder.busy}개 작업 중)` : ''}`
-        const tag = folder.hasMine ? ` ${MINE_TAG}` : ''
+        const tag = folder.hasMine ? ` ${FOLDER_TAG}` : ''
         const room = Math.max(8, scene.width - 2 - cells(count) - cells(tag))
         return (
           <Box flexDirection="column" marginTop={1}>
@@ -173,12 +181,15 @@ function drawAll(scene: Scene) {
   )
 }
 
-/** A folder's sessions; in this session's folder, this session's board under them. */
+/**
+ * A folder's sessions; in this session's folder, this session's board under them, and in another
+ * folder a way back up to every session.
+ */
 function drawFolder(scene: Scene) {
   const { Box, Text, Button } = scene.kit
   const { list, minePid, homeDir } = scene.peers
   const folder = scene.scope.folder ?? scene.peers.folder
-  const isHome = folder === undefined || folder === scene.peers.folder
+  const isHome = isHomeList(scene)
   const sessions = rank(
     list.filter(peer => peer.cwd === folder),
     minePid,
@@ -187,18 +198,19 @@ function drawFolder(scene: Scene) {
   return (
     <Box flexDirection="column">
       <Box flexDirection="row">
-        <Box flexShrink={0}>
-          <Button key="scope:all" plain label="↑ 모든 세션" onPress={() => scene.goAll()}>
-            <Text backgroundColor={CHIP.idle} color="text">
-              {' ↑ 모든 세션 '}
-            </Text>
-          </Button>
-        </Box>
+        {!isHome && (
+          <Box flexShrink={0} marginRight={1}>
+            <Button key="scope:all" plain label="← 모든 세션" onPress={() => scene.goAll()}>
+              <Text backgroundColor={CHIP.idle} color="text">
+                {' ← 모든 세션 '}
+              </Text>
+            </Button>
+          </Box>
+        )}
         <Box flexGrow={1} flexShrink={1}>
           <Text wrap="truncate-end">
-            {' '}
             <Text weight="bold" {...(isHome && { color: MINE })}>
-              {fitPath(homeShort(folder ?? '', homeDir), Math.max(8, scene.width - 16 - cells(count)))}
+              {fitPath(homeShort(folder ?? '', homeDir), Math.max(8, scene.width - (isHome ? 0 : 16) - cells(count)))}
             </Text>
             <Text dimColor>{count}</Text>
           </Text>

@@ -1,7 +1,7 @@
 {
   "name": "session-dashboard",
-  "version": "0.6.0",
-  "description": "Live dashboard pane (Korean UI): the Claude Code sessions in this folder or, one level up, on the whole machine, this one marked, each messaged or ended from its tab; the main session, subagents, agent teams and workflows, each with what it is doing, progress (done/total), tokens and run time, plus detail tabs; above the prompt, the 5-hour / weekly limit bars with what is left, chips for the model and effort, and toggles for workflows and ultracode",
+  "version": "0.7.0",
+  "description": "Live dashboard pane (Korean UI): top tabs for every Claude Code session on the machine by folder and for this session's folder, this one and its folder marked, each messaged or ended from its tab; the main session, subagents, agent teams and workflows, each with what it is doing, progress (done/total), tokens and run time, plus detail tabs; above the prompt, the 5-hour / weekly limit bars with what is left, chips for the model and effort, and toggles for workflows and ultracode",
   "author": {
     "name": "comdoly-life"
   },

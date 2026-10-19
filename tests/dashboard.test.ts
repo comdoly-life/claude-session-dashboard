@@ -943,21 +943,25 @@ test("the pane lists this folder's sessions with this one marked, goes up to eve
   const inMine = async () =>
     (await ui.findAll({ type: 'Text' })).filter(one => one.props['color'] === MINE).map(one => one.text.trim())
 
-  // The folder level: this folder's two sessions, this one in its own color and tagged, then its board.
-  expect(await ui.find({ text: ' ↑ 모든 세션 ' })).toBeDefined()
+  // The current-session tab: this folder's two sessions, this one in its own color and tagged, then its board.
+  expect(await ui.find({ key: 'top:all' })).toBeDefined()
+  expect(await ui.find({ key: 'top:mine' })).toBeDefined()
+  expect(await ui.find({ key: 'scope:all' })).toBeUndefined()
+  const lit = async () => [(await ui.find({ key: 'top:all' }))?.props['variant'], (await ui.find({ key: 'top:mine' }))?.props['variant']]
+  expect(await lit()).toEqual([undefined, 'primary'])
   expect(await ui.find({ text: ' · 세션 2개' })).toBeDefined()
   expect(await ui.find({ text: /proj-2/ })).toBeDefined()
   expect(await ui.find({ text: /other-1|gone-1/ })).toBeUndefined()
-  expect(await inMine()).toEqual(['/work/proj', 'proj-1', '[이 세션]', '작업 중 · 1m00s'])
+  expect(await inMine()).toEqual(['/work/proj', 'proj-1', '[작업 세션]', '작업 중 · 1m00s'])
   expect(await ui.find({ text: /^ 대기 중 · 3m00s$/ })).toBeDefined()
   expect(await ui.find({ text: /이 세션의 작업/ })).toBeDefined()
 
-  // One level up: every running session by folder, this session's folder first and marked.
-  await ui.press({ key: 'scope:all' })
-  expect(await ui.find({ text: '모든 세션' })).toBeDefined()
+  // The every-session tab: every running session by folder, this session's folder first and marked.
+  await ui.press({ key: 'top:all' })
   expect(await ui.find({ text: '폴더 2개 · 세션 4개' })).toBeDefined()
+  expect(await lit()).toEqual(['primary', undefined])
   expect(await ui.find({ text: /이 세션의 작업/ })).toBeUndefined()
-  expect(await inMine()).toEqual(['▸ /work/proj', '[이 세션]', 'proj-1', '[이 세션]', '작업 중 · 1m00s'])
+  expect(await inMine()).toEqual(['▸ /work/proj', '[작업폴더]', 'proj-1', '[작업 세션]', '작업 중 · 1m00s'])
   expect(await ui.find({ text: '▸ ~/other' })).toBeDefined()
   expect(await ui.find({ text: /other-1/ })).toBeDefined()
   expect(await ui.find({ text: /gone-1/ })).toBeUndefined()
@@ -970,13 +974,15 @@ test("the pane lists this folder's sessions with this one marked, goes up to eve
   // The other process with this session's id is that folder's own, not this session.
   expect(await ui.find({ text: /other-2/ })).toBeDefined()
   expect(await inMine()).toEqual([])
+  expect(await lit()).toEqual(['primary', undefined])
   expect(await ui.find({ text: /이 세션의 작업/ })).toBeUndefined()
   await ui.press({ key: 'scope:all' })
-  await ui.press({ key: 'scope:folder' })
+  expect(await ui.find({ text: '폴더 2개 · 세션 4개' })).toBeDefined()
+  await ui.press({ key: 'top:mine' })
   expect(await ui.find({ text: /이 세션의 작업/ })).toBeDefined()
 
   // Right on the all-sessions list: a message to another session, and its end on a second press.
-  await ui.press({ key: 'scope:all' })
+  await ui.press({ key: 'top:all' })
   expect(await ui.find({ key: 'row-message:101' })).toBeUndefined()
   await ui.press({ key: 'row-message:103' })
   expect(filled).toEqual(['/dash-send other-1 '])
@@ -988,7 +994,7 @@ test("the pane lists this folder's sessions with this one marked, goes up to eve
   expect(ran).toContain('kill -TERM 103')
   expect(await ui.find({ text: /other-1/ })).toBeUndefined()
   toasts.length = 0
-  await ui.press({ key: 'scope:folder' })
+  await ui.press({ key: 'top:mine' })
 
   // Another session's tab: how it stands, a message through the prompt, an end on a second press.
   await ui.press({ key: 'peer:102' })
@@ -1012,14 +1018,14 @@ test("the pane lists this folder's sessions with this one marked, goes up to eve
   await ui.press({ key: 'back' })
   expect(await ui.find({ text: ' · 세션 1개' })).toBeDefined()
   expect(await ui.find({ text: /● proj-2/ })).toBeUndefined()
-  expect(await inMine()).toEqual(['/work/proj', 'proj-1', '[이 세션]', '작업 중 · 1m00s'])
-  await ui.press({ key: 'scope:all' })
+  expect(await inMine()).toEqual(['/work/proj', 'proj-1', '[작업 세션]', '작업 중 · 1m00s'])
+  await ui.press({ key: 'top:all' })
   expect(await ui.find({ text: '폴더 2개 · 세션 2개' })).toBeDefined()
   await ui.press({ key: 'peer:105' })
   expect(await ui.find({ text: /other-2/ })).toBeDefined()
   expect(await ui.find({ text: '메인 루프' })).toBeUndefined()
   await ui.press({ key: 'back' })
-  await ui.press({ key: 'scope:folder' })
+  await ui.press({ key: 'top:mine' })
 
   // This session's own row opens its own tab.
   await ui.press({ key: 'peer:101' })
