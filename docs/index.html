@@ -94,6 +94,9 @@
   .term .dim { color: var(--term-dim); }
   .term .b { font-weight: 700; }
   .term .ok { color: var(--ok); }
+  .term .mine { color: #5fd7ff; font-weight: 700; }
+  .term .busy { color: #4eba65; }
+  .term .idle { color: var(--term-dim); }
   .term .rule { border-top: 1px solid #333; margin: 10px 0; }
   .chip { padding: 0 .5ch; background: var(--chip-idle); color: #fff; }
   .chip.model { background: #ffa36c; color: #000; font-weight: 700; }
@@ -125,7 +128,7 @@
   <header>
     <p class="eyebrow">Claude Code mod</p>
     <h1>Claude Session Dashboard</h1>
-    <p class="lead">Claude Code 세션에서 돌아가는 메인 세션, 서브에이전트, 에이전트 팀, 워크플로를 한 창에서 보여 줍니다.
+    <p class="lead">같은 폴더와 이 컴퓨터의 모든 Claude Code 세션, 그리고 이 세션에서 돌아가는 메인 세션, 서브에이전트, 에이전트 팀, 워크플로를 한 창에서 보여 줍니다.
       프롬프트 위에서는 5시간·주간 한도를 보고 모델, effort, 워크플로, 울트라코드를 버튼으로 바꿉니다.</p>
   </header>
 
@@ -133,7 +136,11 @@
     <h2 id="preview">미리 보기</h2>
     <div class="term" role="img" aria-label="대시보드 창과 프롬프트 위 세 줄의 예시 화면">
       <div class="pane">
-        <div class="row"><span class="b">대시보드 · 3개 실행 중</span><span class="dim">↑입력 ↓출력 · 시간</span></div>
+        <div class="row"><span><span class="chip">↑ 모든 세션</span> <span class="mine">~/work/my-app</span><span class="dim"> · 세션 2개</span></span></div>
+        <div class="row"><span><span class="busy">●</span> <span class="mine">my-app-38 [이 세션]</span></span><span class="mine" style="font-weight:400">작업 중 · 1m00s</span></div>
+        <div class="row"><span><span class="idle">●</span> my-app-41</span><span class="dim">대기 중 · 3m00s</span></div>
+        <div class="row" style="height:1.5em"></div>
+        <div class="row"><span class="b">이 세션의 작업 · 3개 실행 중</span><span class="dim">↑입력 ↓출력 · 시간</span></div>
         <div class="row"><span>☐ 메인 세션 (2/5)</span><span class="dim">↑230k ↓4.1k</span></div>
         <div class="row"><span class="dim">    대시보드 탭 구현 중</span></div>
         <div class="row"><span>☐ 탐색 에이전트 · 코드 구조 탐색 (0/1)</span><span class="dim">↑41k ↓2k · 1m20s</span></div>
@@ -148,7 +155,18 @@
       <div class="row"><span class="dim">워크플로</span> <span class="chip flow">ON</span>  <span class="dim">울트라코드</span> <span class="chip ultra">ON</span></div>
       <div class="row dim">› </div>
     </div>
-    <p class="caption">위쪽이 대시보드 창, 구분선 아래가 프롬프트 바로 위에 붙는 세 줄입니다. 화면 문구는 한국어입니다.</p>
+    <p class="caption">위쪽이 대시보드 창(이 폴더의 세션, 그 아래 이 세션의 작업), 구분선 아래가 프롬프트 바로 위에 붙는 세 줄입니다. 화면 문구는 한국어입니다.</p>
+    <div class="term" role="img" aria-label="한 단계 위로 올라간 모든 세션 보기의 예시 화면" style="margin-top:14px">
+      <div class="pane">
+        <div class="row"><span><span class="chip">↓ 이 폴더</span> <span class="b">모든 세션</span> <span class="dim">폴더 2개 · 세션 3개</span></span></div>
+        <div class="row"><span><span class="mine">▸ ~/work/my-app</span><span class="dim"> · 2개 (1개 작업 중)</span> <span class="mine">[이 세션]</span></span></div>
+        <div class="row"><span>  <span class="busy">●</span> <span class="mine">my-app-38 [이 세션]</span></span><span class="mine" style="font-weight:400">작업 중 · 1m00s</span></div>
+        <div class="row"><span>  <span class="idle">●</span> my-app-41</span><span class="dim">대기 중 · 3m00s</span></div>
+        <div class="row"><span><span class="b">▸ ~/work/blog</span><span class="dim"> · 1개 (1개 작업 중)</span></span></div>
+        <div class="row"><span>  <span class="busy">●</span> blog-2</span><span class="dim">작업 중 · 5s</span></div>
+      </div>
+    </div>
+    <p class="caption"><code>↑ 모든 세션</code>을 누르면 이 컴퓨터에서 실행 중인 모든 Claude Code 세션을 폴더별로 봅니다. 이 세션과 그 폴더는 하늘색과 <code>[이 세션]</code>으로 표시됩니다.</p>
     <ul class="legend" aria-label="버튼 색">
       <li><span class="chip">회색</span>고르지 않은 버튼</li>
       <li><span class="chip model">주황</span>고른 모델</li>
@@ -197,6 +215,10 @@ claude plugin install session-dashboard@claude-session-dashboard</pre><button ty
           <tr><td>effort 바꾸기</td><td>low부터 max까지 누릅니다. <code>/effort</code>와 같고, 턴이 돌고 있으면 그 턴이 끝난 뒤 적용됩니다.</td></tr>
           <tr><td>워크플로 켜고 끄기</td><td>워크플로 버튼을 누릅니다. <code>/config</code>의 Dynamic workflows와 같습니다.</td></tr>
           <tr><td>울트라코드 켜고 끄기</td><td>울트라코드 버튼을 누릅니다. 이 세션에만 적용되고, 워크플로가 꺼져 있으면 함께 켭니다.</td></tr>
+          <tr><td>같은 폴더의 다른 세션 보기</td><td>대시보드는 이 폴더의 세션 목록에서 시작합니다. 내 세션은 하늘색 글자와 <code>[이 세션]</code>으로 표시되고, 그 아래에 이 세션의 작업이 이어집니다.</td></tr>
+          <tr><td>모든 세션 보기</td><td>맨 위 <code>↑ 모든 세션</code>을 누릅니다. 폴더 줄을 누르면 그 폴더의 세션으로, <code>↓ 이 폴더</code>는 이 세션의 폴더로 돌아갑니다.</td></tr>
+          <tr><td>다른 세션에 메시지 보내기</td><td>세션을 눌러 탭을 열고 <code>메시지 보내기</code>를 누르면 프롬프트에 <code>/dash-send &lt;세션 이름&gt;</code>이 채워집니다. 메시지를 이어 쓰고 Enter를 누릅니다.</td></tr>
+          <tr><td>다른 세션 끝내기</td><td>세션 탭의 <code>세션 종료</code>를 두 번 누릅니다. 대화 기록은 남아 <code>claude --resume &lt;세션 ID&gt;</code>로 다시 열 수 있습니다.</td></tr>
           <tr><td>세부 내용 보기</td><td>대시보드 창에서 항목을 클릭하면 탭이 열립니다. 맡은 일, 지금 하는 일, 토큰 내역, 할 일, 최근 호출을 보여 줍니다.</td></tr>
         </tbody>
       </table>
@@ -227,7 +249,8 @@ claude plugin marketplace remove claude-session-dashboard</pre><button type="but
     <h2 id="notes">알아 둘 점</h2>
     <ul>
       <li>5시간·주간 한도는 Claude 구독으로 로그인했을 때만 나옵니다. API 키로 쓰면 한도 줄이 없습니다.</li>
-      <li>네트워크로 아무것도 보내지 않습니다. 세션의 이벤트와 세션 폴더의 워크플로 기록만 읽습니다.</li>
+      <li>네트워크로 아무것도 보내지 않습니다. 세션의 이벤트, 세션 폴더의 워크플로 기록, 실행 중인 세션마다 Claude Code가 남기는 등록 파일(<code>~/.claude/sessions</code>)만 읽습니다.</li>
+      <li>세션 목록은 이 컴퓨터의 세션만 보여 줍니다. 다른 세션의 서브에이전트·토큰 같은 작업 내역은 그 세션의 대시보드에서 봅니다.</li>
       <li>터미널이 좁으면 막대가 짧아지거나 빠지고, 버튼 묶음이 다음 줄로 넘어갑니다.</li>
       <li>처음 켤 때와 <code>/clear</code> 뒤에는 지금 모델과 그 모델에 저장된 effort를 바로 표시합니다.</li>
     </ul>
@@ -235,7 +258,7 @@ claude plugin marketplace remove claude-session-dashboard</pre><button type="but
 
   <section aria-labelledby="english" lang="en">
     <h2 id="english">In English</h2>
-    <p>A Claude Code mod with a live pane of the main session, subagents, agent teams and workflows (what each is doing, progress, tokens and run time), and three rows above the prompt: the 5-hour / weekly limit bars with what is left, chips for the model and effort, and toggles for workflows and ultracode. The UI text is in Korean. It is not on the official marketplace: it needs Claude Code 2.1.300 or later and git. Clone the repository, add the clone as a local marketplace, then install, in a shell:</p>
+    <p>A Claude Code mod with a list of the Claude Code sessions running in this folder (one level up, every session on the machine by folder, this session marked; open one to message or end it), a live pane of the main session, subagents, agent teams and workflows (what each is doing, progress, tokens and run time), and three rows above the prompt: the 5-hour / weekly limit bars with what is left, chips for the model and effort, and toggles for workflows and ultracode. The UI text is in Korean. It is not on the official marketplace: it needs Claude Code 2.1.300 or later and git. Clone the repository, add the clone as a local marketplace, then install, in a shell:</p>
     <div class="cmd"><pre>git clone https://github.com/comdoly-life/claude-session-dashboard.git ~/claude-session-dashboard
 claude plugin marketplace add ~/claude-session-dashboard
 claude plugin install session-dashboard@claude-session-dashboard</pre><button type="button" data-copy="git clone https://github.com/comdoly-life/claude-session-dashboard.git ~/claude-session-dashboard&#10;claude plugin marketplace add ~/claude-session-dashboard&#10;claude plugin install session-dashboard@claude-session-dashboard">Copy</button></div>

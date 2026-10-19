@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { AgentInfo, ConfigRow, EngineInterface, Register, SessionUsage, Settings } from 'claude-code'
 
-import type { Activity, Controls, EffortLevel, LimitWindow, Meter, ModelFamily, Tabs, TaskItem, Todo, WorkflowCall } from '../types'
+import type { Activity, Controls, EffortLevel, LimitWindow, Meter, ModelFamily, Peer, Tabs, TaskItem, Todo, WorkflowCall } from '../types'
 import { ALL, buildBoard, closeTab, openTab, showTab } from './board'
 import { CHIP, EFFORTS, MODELS, NO_CONTROLS, afterCommand, effortOf, familyOf, isEffortLevel, isRefusal, modelText, savedEffort } from './controls'
 import {
@@ -18,6 +18,7 @@ import {
   sumTokens,
   tokenText,
 } from './format'
+import { addressOf, alivePids, findPeer, folderKey, ownRow, peerName, peerOf, sendArgs } from './sessions'
 import { drawPane } from './view'
 import {
   bindAgent,
@@ -65,6 +66,8 @@ const tasks = atom({ plugin: 'session-dashboard', key: 'tasks' } as const, {})
 const tabs = atom({ plugin: 'session-dashboard', key: 'tabs' } as const, { open: [], active: ALL })
 const faults = atom({ plugin: 'session-dashboard', key: 'faults' } as const, [])
 const controls = atom({ plugin: 'session-dashboard', key: 'controls' } as const, NO_CONTROLS)
+const peers = atom({ plugin: 'session-dashboard', key: 'peers' } as const, { list: [] })
+const scope = atom({ plugin: 'session-dashboard', key: 'scope' } as const, { level: 'folder' })
 
 type Engine = EngineInterface
 
@@ -74,6 +77,25 @@ const place: { id?: string; dir?: string } = {}
 const journals = new Map<string, number>()
 const scripts = new Map<string, WorkflowCall | null>()
 let isSyncing = false
+let isReadingPeers = false
+/** This session's process, once its registry row is found: it keeps the row through a /clear. */
+let minePid: number | undefined
+
+/**
+ * This session's process id: the nearest ancestor of a child process it starts that has a row
+ * in the registry (the engine runs the child, maybe through a shell). Undefined where no `sh`
+ * or `ps` answers; the row is then known by its id in its folder.
+ */
+async function ownPid($: Engine, registered: ReadonlySet<number>): Promise<number | undefined> {
+  if (minePid !== undefined && registered.has(minePid)) return minePid
+  const climb = 'p=$PPID; for i in 1 2 3 4 5 6; do echo $p; p=$(ps -o ppid= -p $p | tr -d " "); [ -z "$p" ] && break; done'
+  const ran = await $.process.run(['sh', '-c', climb], { timeoutMs: 5000 })
+  for (const line of ran.stdout.split('\n')) {
+    const pid = Number(line.trim())
+    if (registered.has(pid)) return pid
+  }
+  return undefined
+}
 
 async function touch($: Engine, key: string, fn: (one: Activity, now: number) => Activity) {
   const now = await $.clock.now()
@@ -100,6 +122,15 @@ async function safe($: Engine, where: string, work: () => Promise<unknown>) {
   } catch (error) {
     await fault($, where, error)
   }
+}
+
+/** Moves the list up to every session or down to a folder's, and reads the registry again. */
+function look($: Engine, next: { level: 'folder' | 'all'; folder?: string }) {
+  void (async () => {
+    await update($, scope, () => next)
+    await update($, tabs, state => showTab(state, ALL))
+    await syncPeers($)
+  })().catch(error => fault($, 'scope', error))
 }
 
 async function recordMeter($: Engine, usage: Pick<SessionUsage, 'rateLimits' | 'cost' | 'context'>) {
@@ -145,12 +176,102 @@ function noteTranscript(path: unknown) {
   place.id = place.dir.split('/').pop()
 }
 
+/** Where the engine keeps its files: `CLAUDE_CONFIG_DIR`, else `~/.claude`. */
+async function configDir($: Engine): Promise<string | undefined> {
+  const home = await $.env.get('HOME')
+  return (await $.env.get('CLAUDE_CONFIG_DIR')) ?? (home === undefined ? undefined : `${home}/.claude`)
+}
+
+/**
+ * Reads every Claude Code session running on this machine off the engine's registry
+ * (`<config>/sessions/<pid>.json`), dropping the files a crashed process left behind;
+ * this session is always listed, from its own answers when the registry lacks it.
+ */
+async function syncPeers($: Engine) {
+  if (isReadingPeers) return
+  isReadingPeers = true
+  try {
+    const mine = await $.session.id()
+    const cwd = folderKey(await $.session.cwd())
+    const homeDir = await $.env.get('HOME')
+    const config = await configDir($)
+    let list: Peer[] = []
+    let error: string | undefined
+    if (config !== undefined) {
+      const dir = `${config}/sessions`
+      const entries = (await $.fs.exists(dir).catch(() => false)) ? await $.fs.list(dir) : []
+      const files = entries.filter(entry => entry.kind === 'file' && /^\d+\.json$/.test(entry.name))
+      const found = await Promise.all(
+        files.map(async entry => {
+          const source = await $.fs.read(`${dir}/${entry.name}`).catch(() => undefined)
+          return typeof source === 'string' ? peerOf(source) : undefined
+        }),
+      )
+      list = found.filter((peer): peer is Peer => peer !== undefined)
+    }
+    if (list.length > 0) {
+      const pids = list.map(peer => peer.pid).join(',')
+      const alive = await $.process
+        .run(['ps', '-o', 'pid=,comm=', '-p', pids], { timeoutMs: 5000 })
+        .then(ran => alivePids(ran.stdout))
+        .catch((reason: unknown) => {
+          error = `프로세스를 확인하지 못했습니다 (${reason instanceof Error ? reason.message : String(reason)})`
+          return undefined
+        })
+      if (alive !== undefined) list = list.filter(peer => alive.has(peer.pid))
+    }
+    // Two processes can carry one session id (a conversation resumed in another folder): this
+    // session's row is its own process's, never the first row with its id.
+    const pid = await ownPid($, new Set(list.map(peer => peer.pid))).catch(() => undefined)
+    let own = ownRow(list, mine, cwd, pid ?? minePid)
+    if (own !== undefined) {
+      minePid = own.pid
+      if (own.sessionId !== mine) {
+        // Its own row still names the id it had before a /clear.
+        const renamed: Peer = { ...own, sessionId: mine }
+        list = list.map(peer => (peer === own ? renamed : peer))
+        own = renamed
+      }
+    } else {
+      const busy = (await read($, activity))[MAIN]?.isBusy === true
+      own = { pid: 0, sessionId: mine, cwd, status: busy ? 'busy' : 'idle' }
+      list = [own, ...list]
+    }
+    const now = await $.clock.now()
+    await update($, peers, () => ({
+      list,
+      mine,
+      minePid: own.pid,
+      folder: own.cwd,
+      readAt: now,
+      ...(homeDir !== undefined && { homeDir }),
+      ...(error !== undefined && { error }),
+    }))
+  } finally {
+    isReadingPeers = false
+  }
+}
+
+/** Whether a process id is still a Claude Code process: a pid freed by a crash may be another program's now. */
+async function isClaude($: Engine, pid: number): Promise<boolean> {
+  const ran = await $.process.run(['ps', '-o', 'comm=', '-p', String(pid)], { timeoutMs: 5000 })
+  return /claude|node|bun/i.test(ran.stdout)
+}
+
+/** Ends another session as closing its terminal would (SIGTERM): the transcript stays, to resume. */
+async function endPeer($: Engine, peer: Peer): Promise<string> {
+  if (peer.pid === 0 || peer.pid === minePid) return '이 세션은 여기서 끝낼 수 없습니다.'
+  if (!(await isClaude($, peer.pid))) return `${peerName(peer)} 세션은 이미 끝났습니다.`
+  const ran = await $.process.run(['kill', '-TERM', String(peer.pid)], { timeoutMs: 5000 })
+  if (ran.exitCode !== 0) return `끝내지 못했습니다: ${ran.stderr.trim() || `exit ${ran.exitCode}`}`
+  return `${peerName(peer)} 세션을 끝냈습니다.`
+}
+
 /** The session's own folder (`<config>/projects/<project>/<session id>`), where runs keep their journals. */
 async function sessionDir($: Engine): Promise<string | undefined> {
   const id = await $.session.id()
   if (place.id === id && place.dir !== undefined) return place.dir
-  const home = await $.env.get('HOME')
-  const config = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? (home === undefined ? undefined : `${home}/.claude`)
+  const config = await configDir($)
   if (config === undefined) return undefined
   for (const where of new Set([await $.session.root(), await $.session.cwd()])) {
     const dir = `${config}/projects/${where.replace(/[^A-Za-z0-9]/g, '-')}/${id}`
@@ -388,11 +509,20 @@ export const register: Register = on => {
       name: 'dash',
       description: '세션 대시보드(서브에이전트·팀·워크플로·토큰)를 열거나 닫습니다',
     })
+    await $.command.register({
+      name: 'dash-send',
+      description: '다른 Claude Code 세션에 메시지를 보냅니다: /dash-send <세션 이름 또는 ID> <메시지>',
+    })
+    await safe($, 'sessions', () => syncPeers($))
     await safe($, 'meter', async () => recordMeter($, await $.session.usage()))
     await safe($, 'controls', () => readControls($))
     $.clock.every(TICK_MS, () => {
       void update($, tick, n => n + 1)
       void syncRuns($)
+      void safe($, 'sessions', async () => {
+        const pane = (await $.ui.panes()).find(one => one.id === PANE)
+        if (pane?.isShown === true) await syncPeers($)
+      })
     })
     void syncRuns($)
     void $.ui.open({ id: PANE, title: TITLE })
@@ -409,6 +539,20 @@ export const register: Register = on => {
     await $.ui.open({ id: PANE, title: TITLE })
 
     return { text: '대시보드를 열었습니다.' }
+  })
+
+  on('command.run', { command: 'dash-send' }, async ($, e) => {
+    const asked = sendArgs(e.args)
+    if (asked === undefined) return { text: '사용법: /dash-send <세션 이름 또는 ID> <메시지>' }
+    await safe($, 'sessions', () => syncPeers($))
+    const { list, minePid: own } = await read($, peers)
+    const peer = findPeer(
+      list.filter(one => one.pid !== own),
+      asked.to,
+    )
+    if (peer === undefined) return { text: `'${asked.to}' 세션을 찾지 못했습니다. 대시보드의 모든 세션 목록에서 이름을 확인하세요.` }
+    const sent = await $.session.send({ to: addressOf(peer), text: asked.text })
+    return { text: sent.isDelivered ? `${peerName(peer)} 세션에 보냈습니다.` : `보내지 못했습니다: ${sent.reason}` }
   })
 
   // The person's own /model and /effort, typed or picked: the band follows what they left in force.
@@ -678,6 +822,9 @@ export const register: Register = on => {
       const taskList = await read($, tasks)
       const tabState = await read($, tabs)
       const faultList = await read($, faults)
+      const peerState = await read($, peers)
+      const scopeState = await read($, scope)
+      if (peerState.readAt === undefined) void safe($, 'sessions', () => syncPeers($))
       const board = buildBoard({ now, agents, activity: all, flows, tasks: taskList, maxTasks: MAX_TASKS, maxFinished: MAX_FINISHED })
       const total = sumTokens(Object.values(all).map(one => one.tokens))
       const totals = [
@@ -705,6 +852,33 @@ export const register: Register = on => {
         open: (key, title) => press(state => openTab(state, { key, title: fit(title, 24) })),
         close: key => press(state => closeTab(state, key)),
         show: key => press(state => showTab(state, key)),
+        peers: peerState,
+        scope: scopeState,
+        goAll: () => look($, { level: 'all' }),
+        goFolder: path => look($, path === undefined ? { level: 'folder' } : { level: 'folder', folder: path }),
+        openPeer: peer => {
+          if (peer.pid === peerState.minePid) press(state => openTab(state, { key: 'main', title: '메인 세션' }))
+          else press(state => openTab(state, { key: `peer:${peer.pid}`, title: fit(peerName(peer), 24) }))
+        },
+        message: peer => {
+          const to = peer.name !== undefined && !/\s/.test(peer.name) ? peer.name : String(peer.pid)
+          void $.prompt
+            .fill({ text: `/dash-send ${to} ` })
+            .then(() => $.ui.toast('프롬프트에 메시지를 이어 쓰고 Enter를 누르세요.'))
+            .catch(error => fault($, 'message', error))
+        },
+        end: peer => {
+          void (async () => {
+            if (scopeState.ending !== peer.pid) {
+              await update($, scope, now => ({ ...now, ending: peer.pid }))
+              $.ui.toast(`한 번 더 누르면 ${peerName(peer)} 세션을 끝냅니다.`)
+              return
+            }
+            await update($, scope, ({ ending: _, ...rest }) => rest)
+            $.ui.toast(await endPeer($, peer))
+            await syncPeers($)
+          })().catch(error => fault($, 'end', error))
+        },
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

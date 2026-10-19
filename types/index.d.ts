@@ -139,9 +139,54 @@ export type Controls = {
   pending?: string
 }
 
+/** A Claude Code session running on this machine, as its registry file names it. */
+export type Peer = {
+  pid: number
+  sessionId: string
+  /** The folder it runs in, without a trailing separator. */
+  cwd: string
+  name?: string
+  /** `busy`, `idle`, or what else the registry says. */
+  status?: string
+  /** What it waits on, when it waits on the person. */
+  waitingFor?: string
+  kind?: string
+  entrypoint?: string
+  version?: string
+  startedAt?: number
+  /** When its status last changed. */
+  statusAt?: number
+}
+
+/** The sessions the registry lists, and which of them is this one. */
+export type Peers = {
+  list: Peer[]
+  /** This session's id; it keeps its row while the registry lags behind a /clear. */
+  mine?: string
+  /**
+   * This session's own process: what tells its row apart. Two processes can carry one session
+   * id (the same conversation resumed in another folder), so a row is known by its pid.
+   */
+  minePid?: number
+  /** This session's folder, the one the pane opens on. */
+  folder?: string
+  /** The person's home folder, which the pane writes as `~`. */
+  homeDir?: string
+  readAt?: number
+  error?: string
+}
+
+/**
+ * Which sessions the pane lists: the folder level (this session's folder, or the one picked
+ * from the view above) or every session on the machine; `ending` a session whose end waits on a second press.
+ */
+export type Scope = { level: 'folder' | 'all'; folder?: string; ending?: number }
+
 declare module 'claude-code' {
   interface PluginState {
     'session-dashboard': {
+      peers: Peers
+      scope: Scope
       activity: Record<string, Activity>
       meter: Meter
       tick: number

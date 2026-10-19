@@ -18,6 +18,7 @@ import { CHIP, NO_CONTROLS, afterCommand, effortIn, familyOf, modelText, savedEf
 import { buildBoard, typeLabel } from '../hooks/board'
 import { activityOf, brief, fit } from '../hooks/format'
 import { planOf } from '../hooks/plan'
+import { MINE, addressOf, alivePids, findPeer, fitPath, foldersOf, homeShort, isWorking, lookOf, ownRow, peerOf, rank, sendArgs } from '../hooks/sessions'
 import { QUIET_MS, arrange, bindAgent, metaOf, readJournal, readNotice, standing, startTask, syncRun } from '../hooks/workflow'
 
 const HOUR = 3_600_000
@@ -318,6 +319,88 @@ describe('controls', () => {
   })
 })
 
+describe('sessions', () => {
+  test("reads the registry's session files and which processes still run", async () => {
+    const row = { pid: 7, sessionId: 's-7', cwd: '/work/proj/', name: 'proj-7', status: 'idle', statusUpdatedAt: 5, startedAt: 1, kind: 'interactive' }
+    expect(peerOf(JSON.stringify(row))).toEqual({
+      pid: 7,
+      sessionId: 's-7',
+      cwd: '/work/proj',
+      name: 'proj-7',
+      status: 'idle',
+      kind: 'interactive',
+      startedAt: 1,
+      statusAt: 5,
+    })
+    expect(peerOf('{"pid":"7","sessionId":"x","cwd":"/"}')).toBeUndefined()
+    expect(peerOf('not json')).toBeUndefined()
+    expect([...alivePids('  101 claude\n 103 node\n')]).toEqual([101, 103])
+    // Any word for work counts as at work: `shell` is a session running a command.
+    expect(lookOf({ status: 'shell' })).toEqual({ word: '명령 실행 중', color: 'success' })
+    expect(lookOf({ status: 'compacting' })).toEqual({ word: '작업 중 · compacting', color: 'success' })
+    expect(lookOf({ status: 'idle' }).word).toBe('대기 중')
+    expect(lookOf({ status: 'busy', waitingFor: 'permission' }).word).toBe('응답 기다림')
+    expect([isWorking({ status: 'shell' }), isWorking({ status: 'idle' }), isWorking({ status: 'busy', waitingFor: 'x' })]).toEqual([
+      true,
+      false,
+      false,
+    ])
+    const folders = foldersOf([{ pid: 1, sessionId: 'a', cwd: '/x', status: 'shell' }, { pid: 2, sessionId: 'b', cwd: '/x', status: 'idle' }], undefined)
+    expect(folders[0]?.busy).toBe(1)
+  })
+
+  test('groups sessions by folder, this one and its folder first, then the busy and the latest', async () => {
+    const peer = (pid: number, sessionId: string, cwd: string, status: string, statusAt: number) => ({ pid, sessionId, cwd, status, statusAt })
+    const folders = foldersOf(
+      [peer(1, 'a', '/x', 'idle', 9), peer(2, 'b', '/y', 'busy', 1), peer(3, 'mine', '/z', 'idle', 1), peer(4, 'c', '/y', 'idle', 20), peer(5, 'd', '/z', 'busy', 2)],
+      3,
+    )
+    expect(folders.map(f => [f.path, f.hasMine, f.sessions.map(one => one.sessionId)])).toEqual([
+      ['/z', true, ['mine', 'd']],
+      ['/y', false, ['b', 'c']],
+      ['/x', false, ['a']],
+    ])
+  })
+
+  test('tells two processes of one session id apart by process, and keeps rows in place', async () => {
+    // The same conversation resumed in another folder: two rows, one id.
+    const here = { pid: 101, sessionId: 'same', cwd: '/work/proj', name: 'proj-1' }
+    const there = { pid: 105, sessionId: 'same', cwd: '/home/me/other', name: 'other-2' }
+    const list = [there, here, { pid: 102, sessionId: 'two', cwd: '/work/proj' }]
+    expect(ownRow(list, 'same', '/work/proj', 101)).toBe(here)
+    expect(ownRow(list, 'same', '/work/proj', undefined)).toBe(here)
+    expect(ownRow(list, 'same', '/elsewhere', undefined)).toBeUndefined()
+    expect(foldersOf(list, 101).map(f => [f.path, f.hasMine])).toEqual([
+      ['/work/proj', true],
+      ['/home/me/other', false],
+    ])
+    // Ties break by process id, so the order of the registry's files moves no row.
+    const idle = (pid: number) => ({ pid, sessionId: `s${pid}`, cwd: '/x', status: 'idle', statusAt: 1 })
+    expect(rank([idle(5), idle(3), idle(4)], undefined).map(one => one.pid)).toEqual([3, 4, 5])
+    expect(rank([idle(4), idle(5), idle(3)], undefined).map(one => one.pid)).toEqual([3, 4, 5])
+    // A message goes by the session's own name; an id two processes share names neither.
+    expect(addressOf(there)).toBe('other-2')
+    expect(addressOf({ pid: 9, sessionId: 'x', cwd: '/' })).toEqual({ sessionId: 'x' })
+    expect(findPeer(list, 'same')).toBeUndefined()
+    expect(findPeer(list, '105')).toBe(there)
+  })
+
+  test('names a session by its name, id or the start of its id, and writes paths short', async () => {
+    const list = [
+      { pid: 1, sessionId: 'abcdef12-0000', cwd: '/x', name: 'proj-1' },
+      { pid: 2, sessionId: 'fedcba98-0000', cwd: '/x' },
+    ]
+    expect(findPeer(list, 'PROJ-1')?.pid).toBe(1)
+    expect(findPeer(list, 'fedcba')?.pid).toBe(2)
+    expect(findPeer(list, 'fed')).toBeUndefined()
+    expect(sendArgs('proj-1  안녕 거기 ')).toEqual({ to: 'proj-1', text: '안녕 거기' })
+    expect(sendArgs('proj-1')).toBeUndefined()
+    expect(homeShort('/home/me/work', '/home/me')).toBe('~/work')
+    expect(homeShort('/home/meow', '/home/me')).toBe('/home/meow')
+    expect(fitPath('/very/long/path/to/project', 12)).toBe('…/to/project')
+  })
+})
+
 describe('board', () => {
   test('lists the main session, the team, subagents, workflows and lone agents with their counts', async () => {
     const agents: AgentInfo[] = [
@@ -506,7 +589,7 @@ test('the board shows every loop with its work, tokens and time; a press opens a
 
     const ui = await $.ui.mount({ plugin: 'session-dashboard', surface, ...PANE })
     expect(await ui.find({ text: /5시간/ })).toBeUndefined()
-    expect(await ui.find({ text: /대시보드 · 1개 실행 중/ })).toBeDefined()
+    expect(await ui.find({ text: /이 세션의 작업 · 1개 실행 중/ })).toBeDefined()
     expect(await ui.find({ text: /Run the unit tests/ })).toBeDefined()
     expect(await ui.find({ text: /npm test|\/Users\/me/ })).toBeUndefined()
     expect(await ui.find({ text: /탐색 에이전트 · 코드/ })).toBeDefined()
@@ -540,11 +623,11 @@ test('the board shows every loop with its work, tokens and time; a press opens a
   expect(await ui.find({ text: '코드 구조 탐색' })).toBeDefined()
 
   await ui.press({ key: 'close:agent:a1' })
-  expect(await ui.find({ text: /대시보드 · 1개 실행 중/ })).toBeDefined()
+  expect(await ui.find({ text: /이 세션의 작업 · 1개 실행 중/ })).toBeDefined()
   await ui.press({ key: 'tab:main' })
   expect(await ui.find({ text: /1회 호출/ })).toBeDefined()
   await ui.press({ key: 'close-top:main' })
-  expect(await ui.find({ text: /대시보드/ })).toBeDefined()
+  expect(await ui.find({ text: /이 세션의 작업/ })).toBeDefined()
   expect(await ui.find({ text: /1회 호출/ })).toBeUndefined()
   await ui.unmount()
 })
@@ -592,7 +675,7 @@ test('a workflow shows each agent at work, ticks them off, then passes into the 
   await spawn('toolu_wf1', 'wf_one', 2, 'review:perf')
   await $.tool.call({ tool: 'Read', file_path: '/repo/hooks/plan.ts', agentId: 'wf_one-2' } as unknown as Parameters<typeof $.tool.call>[0])
   await pane(async ui => {
-    expect(await ui.find({ text: /대시보드 · 1개 실행 중/ })).toBeDefined()
+    expect(await ui.find({ text: /이 세션의 작업 · 1개 실행 중/ })).toBeDefined()
     expect(await ui.find({ text: /^워크플로 · review-changes/ })).toBeDefined()
     expect(await ui.find({ text: ' (0/3)' })).toBeDefined()
     expect(await ui.find({ text: /2개 실행 중 · 1개 대기/ })).toBeDefined()
@@ -638,7 +721,7 @@ test('a workflow shows each agent at work, ticks them off, then passes into the 
   await clock.advance(5000)
   await spawn('toolu_wf2', 'wf_two', 1, 'explore:api')
   await pane(async ui => {
-    expect(await ui.find({ text: /대시보드 · 1개 실행 중/ })).toBeDefined()
+    expect(await ui.find({ text: /이 세션의 작업 · 1개 실행 중/ })).toBeDefined()
     expect(await ui.find({ text: ' (0/1+)' })).toBeDefined()
     expect(await ui.find({ text: /explore:api/ })).toBeDefined()
     expect(await ui.find({ text: ' (2/2)' })).toBeDefined()
@@ -785,4 +868,169 @@ test('the band picks the model, effort, workflows and ultracode from its chips, 
     '워크플로 끔 (울트라코드도 쓸 수 없음)',
     '워크플로를 켜고 울트라코드 켬 (이 세션만)',
   ])
+})
+
+test("the pane lists this folder's sessions with this one marked, goes up to every session by folder, and messages or ends another", async ($, on) => {
+  mock.clock(on, { now: NOW })
+  mock.store(on)
+  const registry = (pid: number, row: Record<string, unknown>) => ({
+    [`/home/me/.claude/sessions/${pid}.json`]: { text: JSON.stringify({ pid, ...row }), at: NOW },
+  })
+  const files: Files = {
+    ...registry(101, { sessionId: 'sess-1', cwd: '/work/proj', name: 'proj-1', status: 'busy', statusUpdatedAt: NOW - 60_000, startedAt: NOW - HOUR }),
+    ...registry(102, {
+      sessionId: 'sess-2',
+      cwd: '/work/proj/',
+      name: 'proj-2',
+      status: 'idle',
+      statusUpdatedAt: NOW - 180_000,
+      startedAt: NOW - 2 * HOUR,
+      kind: 'interactive',
+      entrypoint: 'cli',
+      version: '2.1.303',
+    }),
+    ...registry(103, { sessionId: 'sess-3', cwd: '/home/me/other', name: 'other-1', status: 'busy', statusUpdatedAt: NOW - 5000 }),
+    // A crashed process's file: its pid no longer runs.
+    ...registry(104, { sessionId: 'sess-4', cwd: '/home/me/gone', name: 'gone-1', status: 'idle' }),
+    // This conversation resumed in another folder: another process with this session's id.
+    ...registry(105, { sessionId: 'sess-1', cwd: '/home/me/other', name: 'other-2', status: 'idle', statusUpdatedAt: NOW - 1000 }),
+    '/home/me/.claude/sessions/101.abc.key': { text: 'key', at: NOW },
+  }
+  world(on, files)
+  const ran: string[] = []
+  const filled: string[] = []
+  const sent: string[] = []
+  const toasts: string[] = []
+  const running = new Set([101, 102, 103, 105])
+  on('process.run', (_$, e) => {
+    ran.push(e.argv.join(' '))
+    const asked = (e.argv.at(-1) ?? '').split(',').map(Number)
+    let stdout = ''
+    if (e.argv[0] === 'ps') stdout = asked.filter(pid => running.has(pid)).map(pid => `${pid} claude`).join('\n')
+    // The shell the plugin starts, its parent and this session's process above it.
+    if (e.argv[0] === 'sh') stdout = '9999\n101\n1\n'
+    if (e.argv[0] === 'kill') {
+      // An ended session takes its registry file with it.
+      const pid = Number(e.argv.at(-1))
+      running.delete(pid)
+      delete files[`/home/me/.claude/sessions/${pid}.json`]
+    }
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('prompt.fill', (_$, e) => {
+    filled.push(e.text)
+    return { isFilled: true }
+  })
+  on('session.send', (_$, e) => {
+    sent.push(`${e.to} ${e.text}`)
+    return { isDelivered: true as const }
+  })
+  on('ui.toast', (_$, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('agent.list', () => ({ value: [] }))
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true as const } }))
+  on('session.usage', () => ({ value: { startedAt: NOW, context: { window: 200_000 }, rateLimits: [] } }))
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('settings.read', () => ({ value: {} }))
+  on('config.list', () => ({ value: [] }))
+
+  await $.session.start({ cwd: '/work/proj', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'session-dashboard', surface: 'terminal', ...PANE })
+  const inMine = async () =>
+    (await ui.findAll({ type: 'Text' })).filter(one => one.props['color'] === MINE).map(one => one.text.trim())
+
+  // The folder level: this folder's two sessions, this one in its own color and tagged, then its board.
+  expect(await ui.find({ text: ' ↑ 모든 세션 ' })).toBeDefined()
+  expect(await ui.find({ text: ' · 세션 2개' })).toBeDefined()
+  expect(await ui.find({ text: /proj-2/ })).toBeDefined()
+  expect(await ui.find({ text: /other-1|gone-1/ })).toBeUndefined()
+  expect(await inMine()).toEqual(['/work/proj', 'proj-1', '[이 세션]', '작업 중 · 1m00s'])
+  expect(await ui.find({ text: /^ 대기 중 · 3m00s$/ })).toBeDefined()
+  expect(await ui.find({ text: /이 세션의 작업/ })).toBeDefined()
+
+  // One level up: every running session by folder, this session's folder first and marked.
+  await ui.press({ key: 'scope:all' })
+  expect(await ui.find({ text: '모든 세션' })).toBeDefined()
+  expect(await ui.find({ text: '폴더 2개 · 세션 4개' })).toBeDefined()
+  expect(await ui.find({ text: /이 세션의 작업/ })).toBeUndefined()
+  expect(await inMine()).toEqual(['▸ /work/proj', '[이 세션]', 'proj-1', '[이 세션]', '작업 중 · 1m00s'])
+  expect(await ui.find({ text: '▸ ~/other' })).toBeDefined()
+  expect(await ui.find({ text: /other-1/ })).toBeDefined()
+  expect(await ui.find({ text: /gone-1/ })).toBeUndefined()
+
+  // Down into another folder: its sessions alone, no board of this session.
+  await ui.press({ key: 'folder:/home/me/other' })
+  expect(await ui.find({ text: '~/other' })).toBeDefined()
+  expect(await ui.find({ text: ' · 세션 2개' })).toBeDefined()
+  expect(await ui.find({ text: /other-1/ })).toBeDefined()
+  // The other process with this session's id is that folder's own, not this session.
+  expect(await ui.find({ text: /other-2/ })).toBeDefined()
+  expect(await inMine()).toEqual([])
+  expect(await ui.find({ text: /이 세션의 작업/ })).toBeUndefined()
+  await ui.press({ key: 'scope:all' })
+  await ui.press({ key: 'scope:folder' })
+  expect(await ui.find({ text: /이 세션의 작업/ })).toBeDefined()
+
+  // Right on the all-sessions list: a message to another session, and its end on a second press.
+  await ui.press({ key: 'scope:all' })
+  expect(await ui.find({ key: 'row-message:101' })).toBeUndefined()
+  await ui.press({ key: 'row-message:103' })
+  expect(filled).toEqual(['/dash-send other-1 '])
+  filled.length = 0
+  await ui.press({ key: 'row-end:103' })
+  expect(await ui.find({ text: ' 한 번 더 ' })).toBeDefined()
+  expect(ran.some(line => line.startsWith('kill'))).toBe(false)
+  await ui.press({ key: 'row-end:103' })
+  expect(ran).toContain('kill -TERM 103')
+  expect(await ui.find({ text: /other-1/ })).toBeUndefined()
+  toasts.length = 0
+  await ui.press({ key: 'scope:folder' })
+
+  // Another session's tab: how it stands, a message through the prompt, an end on a second press.
+  await ui.press({ key: 'peer:102' })
+  expect(await ui.find({ text: '대기 중 · 3m00s째' })).toBeDefined()
+  expect(await ui.find({ text: '대화형 · cli · v2.1.303' })).toBeDefined()
+  expect(await ui.find({ text: '2h00m 전' })).toBeDefined()
+  expect(await ui.find({ text: 'sess-2' })).toBeDefined()
+  await ui.press({ key: 'message:102' })
+  expect(filled).toEqual(['/dash-send proj-2 '])
+  await ui.press({ key: 'end:102' })
+  expect(await ui.find({ text: ' 한 번 더 누르면 종료 ' })).toBeDefined()
+  expect(ran).not.toContain('kill -TERM 102')
+  await ui.press({ key: 'end:102' })
+  expect(ran).toContain('kill -TERM 102')
+  expect(toasts).toEqual(['프롬프트에 메시지를 이어 쓰고 Enter를 누르세요.', '한 번 더 누르면 proj-2 세션을 끝냅니다.', 'proj-2 세션을 끝냈습니다.'])
+
+  expect(await ui.find({ text: /더 이상 실행 중이 아닙니다/ })).toBeDefined()
+
+  // With the session in the middle gone, every row is still its own: this one marked, the other
+  // folder's two in place, and the process sharing this session's id still that folder's.
+  await ui.press({ key: 'back' })
+  expect(await ui.find({ text: ' · 세션 1개' })).toBeDefined()
+  expect(await ui.find({ text: /● proj-2/ })).toBeUndefined()
+  expect(await inMine()).toEqual(['/work/proj', 'proj-1', '[이 세션]', '작업 중 · 1m00s'])
+  await ui.press({ key: 'scope:all' })
+  expect(await ui.find({ text: '폴더 2개 · 세션 2개' })).toBeDefined()
+  await ui.press({ key: 'peer:105' })
+  expect(await ui.find({ text: /other-2/ })).toBeDefined()
+  expect(await ui.find({ text: '메인 루프' })).toBeUndefined()
+  await ui.press({ key: 'back' })
+  await ui.press({ key: 'scope:folder' })
+
+  // This session's own row opens its own tab.
+  await ui.press({ key: 'peer:101' })
+  expect(await ui.find({ text: '메인 루프' })).toBeDefined()
+  await ui.unmount()
+
+  const send = (args: string) =>
+    $.command.run({ command: 'dash-send', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
+  expect((await send('other-2 안녕 거기')).text).toBe('other-2 세션에 보냈습니다.')
+  expect(sent).toEqual(['other-2 안녕 거기'])
+  expect((await send('proj-2 hi')).text).toMatch(/찾지 못했습니다/)
+  expect((await send('proj-1 hi')).text).toMatch(/찾지 못했습니다/)
+  expect((await send('proj-2')).text).toMatch(/^사용법/)
 })
